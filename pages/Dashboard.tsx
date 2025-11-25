@@ -1,4 +1,3 @@
-
 import React, { useMemo, useContext } from 'react';
 import {
   AreaChart,
@@ -24,7 +23,7 @@ import {
 import { Job, Invoice, Quote, User, JobStatus, InvoiceStatus, QuoteStatus, UserRole } from '../types';
 import { isSameDay, isAfter, isBefore, formatDistanceToNow, addDays, format, endOfDay, differenceInMinutes, endOfMonth, isSameMonth } from 'date-fns';
 import { Link } from 'react-router-dom';
-import { StoreContext } from '../store';
+import { StoreContext } from '../context/StoreContext';
 
 interface DashboardProps {
   jobs: Job[];
@@ -56,18 +55,18 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
 
   // --- EXISTING DATA PREP ---
   const overdueInvoices = invoices.filter(i => i.status === InvoiceStatus.OVERDUE);
-  const unassignedJobs = jobs.filter(j => j.assignedTechIds.length === 0 && j.status !== JobStatus.COMPLETED && j.status !== JobStatus.CANCELLED);
+  const unassignedJobs = jobs.filter(j => (j.assignedTechIds || []).length === 0 && j.status !== JobStatus.COMPLETED && j.status !== JobStatus.CANCELLED);
   const pendingQuotes = quotes.filter(q => q.status === QuoteStatus.SENT);
   
   const todaysJobs = jobs
-    .filter(j => isSameDay(new Date(j.start), today))
-    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    .filter(j => isSameDay(new Date(j.scheduledStart), today))
+    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
 
   const technicians = users.filter(u => u.role === 'TECHNICIAN');
   
   // --- NEW FEATURE 1: MONTHLY REVENUE GOAL ---
   const monthlyRevenue = invoices
-    .filter(i => i.status === InvoiceStatus.PAID && isSameMonth(new Date(i.issuedDate), today))
+    .filter(i => i.status === InvoiceStatus.PAID && isSameMonth(new Date(i.createdAt), today))
     .reduce((acc, i) => acc + i.total, 0);
   const monthlyTarget = 75000; // Mock Target
   const goalProgress = Math.min(100, (monthlyRevenue / monthlyTarget) * 100);
@@ -78,17 +77,20 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
   const avgTicket = paidInvoicesCount > 0 ? totalLifetimeRevenue / paidInvoicesCount : 0;
 
   // --- NEW FEATURE 3: INVENTORY HEALTH ---
-  const inventoryAlerts = store?.inventoryProducts.filter(p => {
-      const currentStock = store.inventoryRecords.filter(r => r.productId === p.id).reduce((acc, r) => acc + r.quantity, 0);
+  const inventoryProducts = store?.inventoryProducts || [];
+  const inventoryRecords = store?.inventoryRecords || [];
+  
+  const inventoryAlerts = inventoryProducts.filter(p => {
+      const currentStock = inventoryRecords.filter(r => r.productId === p.id).reduce((acc, r) => acc + r.quantity, 0);
       return currentStock <= p.minStock;
   }) || [];
 
   // --- NEW FEATURE 4: FLEET UTILIZATION ---
   const activeVehicles = new Set(
       jobs.filter(j => j.status === JobStatus.IN_PROGRESS)
-          .flatMap(j => j.assignedTechIds)
+          .flatMap(j => j.assignedTechIds || [])
   ).size;
-  const totalVehicles = store?.warehouses.filter(w => w.type === 'VEHICLE').length || 4;
+  const totalVehicles = (store?.warehouses || []).filter(w => w.type === 'VEHICLE').length || 4;
 
   // --- NEW FEATURE 5: SERVICE MIX BREAKDOWN ---
   const serviceMixData = useMemo(() => {
@@ -110,25 +112,29 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
   // --- NEW FEATURE 6: TOP PERFORMER ---
   const topPerformer = useMemo(() => {
       const techRevenue: Record<string, number> = {};
-      jobs.filter(j => j.status === JobStatus.COMPLETED && isSameMonth(new Date(j.end), today)).forEach(j => {
-          const val = j.items.reduce((s, i) => s + i.total, 0);
-          j.assignedTechIds.forEach(id => techRevenue[id] = (techRevenue[id] || 0) + val);
+      jobs.filter(j => j.status === JobStatus.COMPLETED && isSameMonth(new Date(j.scheduledEnd), today)).forEach(j => {
+          // Fallback if items not on job
+          const val = (j.items || []).reduce((s, i) => s + (i.total || 0), 0); 
+          (j.assignedTechIds || []).forEach(id => techRevenue[id] = (techRevenue[id] || 0) + val);
       });
       const topId = Object.keys(techRevenue).sort((a, b) => techRevenue[b] - techRevenue[a])[0];
       return users.find(u => u.id === topId);
   }, [jobs, users]);
 
   // --- NEW FEATURE 7: MARKETING ROI ---
-  const marketingRevenue = store?.marketingAutomations.reduce((sum, a) => sum + a.stats.revenue, 0) || 0;
+  const marketingRevenue = (store?.marketingAutomations || []).reduce((sum, a) => sum + a.stats.revenue, 0) || 0;
 
   // --- NEW FEATURE 8: ACCOUNTS RECEIVABLE AGING ---
   const arAgingData = useMemo(() => {
       const aging = { '1-30': 0, '31-60': 0, '60+': 0 };
       overdueInvoices.forEach(inv => {
-          const days = differenceInMinutes(new Date(), new Date(inv.dueDate)) / (60 * 24);
-          if (days <= 30) aging['1-30'] += inv.balanceDue;
-          else if (days <= 60) aging['31-60'] += inv.balanceDue;
-          else aging['60+'] += inv.balanceDue;
+          const days = differenceInMinutes(new Date(), new Date(inv.dueDate || inv.createdAt)) / (60 * 24);
+          // Calculate balance due manually as it's not in standard type usually
+          const balanceDue = inv.total - (inv.amountPaid || 0);
+          
+          if (days <= 30) aging['1-30'] += balanceDue;
+          else if (days <= 60) aging['31-60'] += balanceDue;
+          else aging['60+'] += balanceDue;
       });
       return Object.entries(aging).map(([name, value]) => ({ name, value }));
   }, [overdueInvoices]);
@@ -142,7 +148,8 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
           const dailyRevenue = invoices
               .filter(inv => {
                    if (inv.status !== InvoiceStatus.PAID) return false;
-                   const dateToCheck = inv.payments.length > 0 ? new Date(inv.payments[0].date) : new Date(inv.issuedDate);
+                   // Use safe payment access or createdAt
+                   const dateToCheck = (inv.payments && inv.payments.length > 0) ? new Date(inv.payments[0].date) : new Date(inv.createdAt);
                    return dateToCheck >= dayStart && dateToCheck <= dayEnd;
               })
               .reduce((sum, inv) => sum + inv.total, 0);
@@ -159,14 +166,14 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
   // Helper for Tech Status
   const getTechStatus = (techId: string) => {
     const currentJob = jobs.find(j => 
-      j.assignedTechIds.includes(techId) && 
+      (j.assignedTechIds || []).includes(techId) && 
       j.status === JobStatus.IN_PROGRESS
     );
     if (currentJob) return { status: 'Busy', job: currentJob };
     const scheduledNow = jobs.find(j => 
-      j.assignedTechIds.includes(techId) &&
-      isBefore(new Date(j.start), today) &&
-      isAfter(new Date(j.end), today)
+      (j.assignedTechIds || []).includes(techId) &&
+      isBefore(new Date(j.scheduledStart), today) &&
+      isAfter(new Date(j.scheduledEnd), today)
     );
     if (scheduledNow) return { status: 'Scheduled', job: scheduledNow };
     return { status: 'Available', job: null };
@@ -330,8 +337,8 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
                     todaysJobs.map(job => (
                       <Link to={`/jobs/${job.id}`} key={job.id} className="p-4 flex items-center hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors block group">
                         <div className="w-14 shrink-0 flex flex-col items-center justify-center border-r border-slate-100 dark:border-slate-700 pr-3 mr-3">
-                           <span className="text-xs font-bold text-slate-900 dark:text-white">{new Date(job.start).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</span>
-                           <span className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{new Date(job.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}).slice(-2)}</span>
+                           <span className="text-xs font-bold text-slate-900 dark:text-white">{new Date(job.scheduledStart).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</span>
+                           <span className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{new Date(job.scheduledStart).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}).slice(-2)}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                             <h4 className="font-bold text-slate-900 dark:text-white truncate text-sm group-hover:text-emerald-600 transition-colors">{job.title}</h4>
@@ -524,7 +531,7 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
                   <Link to="/marketing" className="text-purple-600 text-xs font-bold hover:underline">View Campaigns</Link>
               </div>
               <div className="space-y-3">
-                  {store?.marketingAutomations.slice(0, 2).map(auto => (
+                  {(store?.marketingAutomations || []).slice(0, 2).map(auto => (
                       <div key={auto.id} className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 flex justify-between items-center">
                           <div>
                               <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{auto.title}</p>
@@ -562,7 +569,7 @@ const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, user
              </div>
              <div className="p-3 space-y-2">
                  {/* Reuse existing activity logic (mocked for display here as per original component structure) */}
-                 {store?.activityLog.slice(0, 3).map((act, idx) => (
+                 {(store?.activityLog || []).slice(0, 3).map((act, idx) => (
                      <div key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700">
                          <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
                          <div className="flex-1 min-w-0">
@@ -588,12 +595,13 @@ const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }
   if (!currentUser) return null;
 
   // 1. Filter Data for this Tech
-  const myJobs = jobs.filter(j => j.assignedTechIds.includes(currentUser.id));
+  const myJobs = jobs.filter(j => (j.assignedTechIds || []).includes(currentUser.id));
   const completedJobs = myJobs.filter(j => j.status === JobStatus.COMPLETED);
   
   // 2. Metrics Calculation
   const totalRevenue = completedJobs.reduce((sum, job) => {
-      return sum + job.items.reduce((acc, item) => acc + item.total, 0);
+      // Use null safe check for items
+      return sum + (job.items || []).reduce((acc, item) => acc + item.total, 0);
   }, 0);
 
   const jobsDoneCount = completedJobs.length;
@@ -601,7 +609,7 @@ const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }
 
   // Mock Average Time (in minutes)
   const avgTimeMinutes = completedJobs.length > 0 
-    ? completedJobs.reduce((acc, j) => acc + differenceInMinutes(new Date(j.end), new Date(j.start)), 0) / completedJobs.length
+    ? completedJobs.reduce((acc, j) => acc + differenceInMinutes(new Date(j.scheduledEnd), new Date(j.scheduledStart)), 0) / completedJobs.length
     : 0;
   
   const hours = Math.floor(avgTimeMinutes / 60);
@@ -610,13 +618,13 @@ const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }
 
   // 3. Today's Jobs & Next Job
   const todaysJobs = myJobs
-    .filter(j => isSameDay(new Date(j.start), today) && j.status !== JobStatus.CANCELLED)
-    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    .filter(j => isSameDay(new Date(j.scheduledStart), today) && j.status !== JobStatus.CANCELLED)
+    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
 
   const nextJob = todaysJobs.find(j => j.status === JobStatus.SCHEDULED || j.status === JobStatus.IN_PROGRESS) || todaysJobs[0];
 
   // 4. Inventory (Mock)
-  const lowStockCount = store?.inventoryRecords.filter(r => 
+  const lowStockCount = (store?.inventoryRecords || []).filter(r => 
       // Assuming warehouses are linked to users in a real scenario, here we check generally or specific warehouse
       r.warehouseId === 'wh-2' && r.quantity < 5 // Mock 'wh-2' as Tech Van 1
   ).length || 0;
@@ -690,12 +698,12 @@ const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }
                           <span className="bg-blue-500/30 border border-blue-400/30 text-blue-100 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
                               {nextJob.status.replace('_', ' ')}
                           </span>
-                          <span className="text-blue-100 font-mono text-sm">{format(new Date(nextJob.start), 'h:mm a')}</span>
+                          <span className="text-blue-100 font-mono text-sm">{format(new Date(nextJob.scheduledStart), 'h:mm a')}</span>
                       </div>
 
                       <h2 className="text-2xl font-bold mb-2 relative z-10">{nextJob.title}</h2>
                       <p className="text-blue-100 mb-6 flex items-center gap-2 relative z-10">
-                          <MapPin className="w-4 h-4" /> {store?.clients.find(c => c.id === nextJob.clientId)?.billingAddress.street}
+                          <MapPin className="w-4 h-4" /> {store?.clients.find(c => c.id === nextJob.clientId)?.address || 'No Address'}
                       </p>
 
                       <div className="grid grid-cols-2 gap-3 relative z-10">
@@ -739,13 +747,13 @@ const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }
                                       <div className="flex justify-between items-start">
                                           <div>
                                               <p className={`text-xs font-bold uppercase mb-1 ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
-                                                  {format(new Date(job.start), 'h:mm a')}
+                                                  {format(new Date(job.scheduledStart), 'h:mm a')}
                                               </p>
                                               <h4 className={`font-bold text-sm ${isCompleted ? 'text-slate-500 line-through' : 'text-slate-900 dark:text-white'}`}>
                                                   {job.title}
                                               </h4>
                                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                  {client?.lastName} • {client?.properties[0]?.address.street}
+                                                  {client?.lastName} • {client?.address || 'No Address'}
                                               </p>
                                           </div>
                                           <ChevronRight className="w-4 h-4 text-slate-300" />
@@ -826,7 +834,7 @@ const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }
   );
 };
 
-export const Dashboard: React.FC<DashboardProps> = (props) => {
+const Dashboard: React.FC<DashboardProps> = (props) => {
   const store = useContext(StoreContext);
   const currentUser = store?.currentUser;
 
@@ -839,3 +847,5 @@ export const Dashboard: React.FC<DashboardProps> = (props) => {
 
   return <AdminDashboard {...props} />;
 };
+
+export default Dashboard;
