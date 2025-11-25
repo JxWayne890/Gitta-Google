@@ -1,0 +1,8 @@
+{
+  "name": "Gitta Job",
+  "description": "A specialized Field Service Management system for service businesses.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
