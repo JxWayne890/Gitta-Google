@@ -34,8 +34,8 @@ import { InventoryDashboard } from './pages/inventory/InventoryDashboard';
 import { Products } from './pages/inventory/Products';
 import { StockLevels } from './pages/inventory/StockLevels';
 import { PurchaseOrders } from './pages/inventory/PurchaseOrders';
-import { OnboardingWizard } from './components/Onboarding/OnboardingWizard'; 
 import { Loader2 } from 'lucide-react';
+import { OnboardingWizard } from './components/Onboarding/OnboardingWizard';
 
 import { UserRole } from './types';
 
@@ -46,18 +46,14 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!store) return null;
   const { currentUser, switchUser, logout, theme } = store;
 
-  // --- ONBOARDING CHECK ---
-  // Ensure we have a valid user before checking onboarding
+  // --- SAFEGUARD ---
+  // Ensure we have a valid user and company ID before rendering the app layout
   if (!currentUser || currentUser.id === 'guest') {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
             <Loader2 className="w-10 h-10 animate-spin text-teal-500" />
         </div>
       );
-  }
-
-  if (!currentUser.onboardingComplete) {
-      return <OnboardingWizard />;
   }
 
   const handleUserSwitch = () => {
@@ -128,7 +124,9 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const App: React.FC = () => {
   const store = useAppStore();
 
-  // Check if store is still loading OR if authenticated but the user data hasn't fully propagated yet (id is still guest)
+  // Strict loading check: 
+  // 1. If global loading is true
+  // 2. OR if user is authenticated but ID is still 'guest' (incomplete load)
   const isInitializing = store.isLoading || (store.isAuthenticated && store.currentUser.id === 'guest');
 
   if (isInitializing) {
@@ -136,7 +134,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-10 h-10 text-teal-500 animate-spin" />
-          <p className="text-slate-500 font-medium text-sm">Setting up your company...</p>
+          <p className="text-slate-500 font-medium text-sm">Loading your account...</p>
         </div>
       </div>
     );
@@ -144,85 +142,89 @@ const App: React.FC = () => {
 
   return (
     <StoreContext.Provider value={store}>
-      <HashRouter>
-        {!store.isAuthenticated ? (
-            <Routes>
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/features" element={<FeaturesPage />} />
-                <Route path="/pricing" element={<PricingPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-        ) : (
-            <AppLayout>
-            <Routes>
-                <Route 
-                path="/" 
-                element={
-                    <Dashboard 
-                    jobs={store.jobs} 
-                    invoices={store.invoices} 
-                    quotes={store.quotes} 
-                    users={store.users} 
-                    />
-                } 
-                />
-                <Route path="/schedule" element={<Schedule jobs={store.jobs} users={store.users} />} />
-                <Route path="/jobs" element={<JobsList jobs={store.jobs} clients={store.clients} onAddJob={store.addJob} />} />
-                <Route path="/timesheets" element={<Timesheets />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route 
-                    path="/jobs/:id" 
-                    element={
-                        <JobDetail 
-                            jobs={store.jobs} 
-                            clients={store.clients} 
-                            onUpdateStatus={store.updateJobStatus} 
-                        />
-                    } 
-                />
-                <Route path="/clients" element={<ClientsList clients={store.clients} jobs={store.jobs} invoices={store.invoices} onAddClient={store.addClient} />} />
-                <Route 
-                    path="/clients/:id" 
-                    element={
-                        <ClientDetail 
-                            clients={store.clients}
-                            jobs={store.jobs}
-                            quotes={store.quotes}
-                            invoices={store.invoices}
-                            onUpdateClient={store.updateClient}
-                            onAddJob={store.addJob}
-                        />
-                    } 
-                />
-                <Route path="/quotes" element={<QuotesList quotes={store.quotes} clients={store.clients} onAddQuote={store.addQuote} onUpdateQuote={store.updateQuote} />} />
-                <Route path="/invoices" element={<Invoices invoices={store.invoices} clients={store.clients} onCreateInvoice={store.createInvoice} onUpdateInvoice={store.updateInvoice} />} />
-                <Route path="/team" element={<TeamList users={store.users} jobs={store.jobs} />} />
-                <Route path="/team/:id" element={<TeamDetail users={store.users} jobs={store.jobs} />} />
-                <Route path="/reports" element={<Reports jobs={store.jobs} invoices={store.invoices} users={store.users} />} />
-                
-                {/* MARKETING ROUTES */}
-                <Route path="/marketing" element={<Marketing campaigns={store.marketingCampaigns} />} />
-                <Route path="/marketing/campaigns" element={<MarketingCampaigns campaigns={store.marketingCampaigns} segments={store.marketingAudiences} onAddCampaign={store.addCampaign} />} />
-                <Route path="/marketing/campaigns/:id" element={<MarketingCampaignBuilder />} />
-                <Route path="/marketing/automations" element={<MarketingAutomations automations={store.marketingAutomations} />} />
-                <Route path="/marketing/automations/:id" element={<MarketingAutomationBuilder />} />
-                <Route path="/marketing/audiences" element={<MarketingAudiences segments={store.marketingAudiences} />} />
+      {store.isAuthenticated && !store.currentUser.onboardingComplete && store.currentUser.role === UserRole.ADMIN ? (
+        <OnboardingWizard />
+      ) : (
+        <HashRouter>
+          {!store.isAuthenticated ? (
+              <Routes>
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/features" element={<FeaturesPage />} />
+                  <Route path="/pricing" element={<PricingPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+          ) : (
+              <AppLayout>
+              <Routes>
+                  <Route 
+                  path="/" 
+                  element={
+                      <Dashboard 
+                      jobs={store.jobs} 
+                      invoices={store.invoices} 
+                      quotes={store.quotes} 
+                      users={store.users} 
+                      />
+                  } 
+                  />
+                  <Route path="/schedule" element={<Schedule jobs={store.jobs} users={store.users} />} />
+                  <Route path="/jobs" element={<JobsList jobs={store.jobs} clients={store.clients} onAddJob={store.addJob} />} />
+                  <Route path="/timesheets" element={<Timesheets />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route 
+                      path="/jobs/:id" 
+                      element={
+                          <JobDetail 
+                              jobs={store.jobs} 
+                              clients={store.clients} 
+                              onUpdateStatus={store.updateJobStatus} 
+                          />
+                      } 
+                  />
+                  <Route path="/clients" element={<ClientsList clients={store.clients} jobs={store.jobs} invoices={store.invoices} onAddClient={store.addClient} />} />
+                  <Route 
+                      path="/clients/:id" 
+                      element={
+                          <ClientDetail 
+                              clients={store.clients}
+                              jobs={store.jobs}
+                              quotes={store.quotes}
+                              invoices={store.invoices}
+                              onUpdateClient={store.updateClient}
+                              onAddJob={store.addJob}
+                          />
+                      } 
+                  />
+                  <Route path="/quotes" element={<QuotesList quotes={store.quotes} clients={store.clients} onAddQuote={store.addQuote} onUpdateQuote={store.updateQuote} />} />
+                  <Route path="/invoices" element={<Invoices invoices={store.invoices} clients={store.clients} onCreateInvoice={store.createInvoice} onUpdateInvoice={store.updateInvoice} />} />
+                  <Route path="/team" element={<TeamList users={store.users} jobs={store.jobs} />} />
+                  <Route path="/team/:id" element={<TeamDetail users={store.users} jobs={store.jobs} />} />
+                  <Route path="/reports" element={<Reports jobs={store.jobs} invoices={store.invoices} users={store.users} />} />
+                  
+                  {/* MARKETING ROUTES */}
+                  <Route path="/marketing" element={<Marketing campaigns={store.marketingCampaigns} />} />
+                  <Route path="/marketing/campaigns" element={<MarketingCampaigns campaigns={store.marketingCampaigns} segments={store.marketingAudiences} onAddCampaign={store.addCampaign} />} />
+                  <Route path="/marketing/campaigns/:id" element={<MarketingCampaignBuilder />} />
+                  <Route path="/marketing/automations" element={<MarketingAutomations automations={store.marketingAutomations} />} />
+                  <Route path="/marketing/automations/:id" element={<MarketingAutomationBuilder />} />
+                  <Route path="/marketing/audiences" element={<MarketingAudiences segments={store.marketingAudiences} />} />
 
-                {/* INVENTORY ROUTES */}
-                <Route path="/inventory" element={<InventoryDashboard products={store.inventoryProducts} records={store.inventoryRecords} purchaseOrders={store.purchaseOrders} />} />
-                <Route path="/inventory/products" element={<Products products={store.inventoryProducts} vendors={store.vendors} onAddProduct={store.addProduct} />} />
-                <Route path="/inventory/stock" element={<StockLevels products={store.inventoryProducts} records={store.inventoryRecords} warehouses={store.warehouses} onUpdateStock={store.updateStock} />} />
-                <Route path="/inventory/orders" element={<PurchaseOrders orders={store.purchaseOrders} vendors={store.vendors} products={store.inventoryProducts} onCreatePO={store.createPO} />} />
+                  {/* INVENTORY ROUTES */}
+                  <Route path="/inventory" element={<InventoryDashboard products={store.inventoryProducts} records={store.inventoryRecords} purchaseOrders={store.purchaseOrders} />} />
+                  <Route path="/inventory/products" element={<Products products={store.inventoryProducts} vendors={store.vendors} onAddProduct={store.addProduct} />} />
+                  <Route path="/inventory/stock" element={<StockLevels products={store.inventoryProducts} records={store.inventoryRecords} warehouses={store.warehouses} onUpdateStock={store.updateStock} />} />
+                  <Route path="/inventory/orders" element={<PurchaseOrders orders={store.purchaseOrders} vendors={store.vendors} products={store.inventoryProducts} onCreatePO={store.createPO} />} />
 
-                {/* AI TOOLS */}
-                <Route path="/ai-receptionist" element={<AIReceptionist />} />
-                <Route path="/communication" element={<Communication />} />
+                  {/* AI TOOLS */}
+                  <Route path="/ai-receptionist" element={<AIReceptionist />} />
+                  <Route path="/communication" element={<Communication />} />
 
-                <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-            </AppLayout>
-        )}
-      </HashRouter>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+              </AppLayout>
+          )}
+        </HashRouter>
+      )}
     </StoreContext.Provider>
   );
 };

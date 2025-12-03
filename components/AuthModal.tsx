@@ -45,6 +45,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultMo
     setIsLoading(true);
 
     try {
+      if (!store) throw new Error("App state not initialized");
+
       if (mode === 'login') {
         const { error } = await store.login(formData.email, formData.password);
         if (error) throw error;
@@ -72,17 +74,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultMo
         // If a new company was created, show the code
         if (res.companyCode) {
             setCreatedCompanyCode(res.companyCode);
-            setIsLoading(false);
-            return; // Don't close modal yet
+            // DO NOT close modal, show success screen
+        } else {
+            onClose();
         }
-
-        onClose();
       }
     } catch (err: any) {
       // Display the actual error message from Supabase/Store
+      console.error(err);
       setError(err.message || "An error occurred");
     } finally {
-      if (!createdCompanyCode) setIsLoading(false);
+      setIsLoading(false);
     }
   };
 

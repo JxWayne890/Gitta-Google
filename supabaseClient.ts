@@ -24,14 +24,19 @@ const getEnvVar = (key: string): string | undefined => {
   return undefined;
 };
 
-// 1. Get URL: Use Env Var if available, otherwise use the hardcoded URL provided
+// 1. Get URL
 const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || 'https://wumwjhdzihawygsmwfkn.supabase.co';
 
-// 2. Get Key: Use Env Var if available, otherwise use the provided key
+// 2. Get Key
 const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || 'sb_publishable__z3ywGpyTpu8S4FKNCvEoA_Uv0hfbcD';
 
-if (!supabaseAnonKey) {
-    console.warn('Supabase Anon Key is missing. Please set VITE_SUPABASE_ANON_KEY or update supabaseClient.ts');
+if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Supabase URL or Key is missing. Database operations will fail.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  }
+});
