@@ -1,20 +1,37 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Fallback values for environments where import.meta.env is not populated (e.g. browser-native ESM)
-const FALLBACK_URL = 'https://ttmnxegayzckxaclljla.supabase.co';
-const FALLBACK_KEY = 'sb_publishable_mP-6MTOW-5Ald18xE5kMyg_fa5EO2EE';
-
-const getEnvVar = (key: string, fallback: string): string => {
+// Helper to get env vars from either Vite's import.meta.env or standard process.env
+const getEnvVar = (key: string): string | undefined => {
   try {
-    const env = (import.meta as any).env;
-    return env && env[key] ? env[key] : fallback;
+    // Check Vite
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
+      return (import.meta as any).env[key];
+    }
   } catch (e) {
-    return fallback;
+    // Ignore error
   }
+
+  try {
+    // Check process.env (standard)
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return process.env[key];
+    }
+  } catch (e) {
+    // Ignore error
+  }
+
+  return undefined;
 };
 
-const supabaseUrl = getEnvVar('VITE_SUPABASE_URL', FALLBACK_URL);
-const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY', FALLBACK_KEY);
+// 1. Get URL: Use Env Var if available, otherwise use the hardcoded URL provided
+const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || 'https://wumwjhdzihawygsmwfkn.supabase.co';
+
+// 2. Get Key: Use Env Var if available, otherwise use the provided key
+const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || 'sb_publishable__z3ywGpyTpu8S4FKNCvEoA_Uv0hfbcD';
+
+if (!supabaseAnonKey) {
+    console.warn('Supabase Anon Key is missing. Please set VITE_SUPABASE_ANON_KEY or update supabaseClient.ts');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

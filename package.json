@@ -17,7 +17,8 @@
     "date-fns": "^4.1.0",
     "leaflet": "1.9.4",
     "react-leaflet": "5.0.0-rc.2",
-    "@supabase/supabase-js": "^2.84.0"
+    "@supabase/supabase-js": "2.39.3",
+    "jspdf": "2.5.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

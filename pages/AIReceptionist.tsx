@@ -32,7 +32,7 @@ export const AIReceptionist: React.FC = () => {
              </div>
              <div className="text-right">
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">24</p>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Calls Today</p>
+                <p className="text-xs font-bold text-slate-400 uppercase">Calls Today</p>
              </div>
           </div>
 
@@ -43,16 +43,16 @@ export const AIReceptionist: React.FC = () => {
              </div>
              <div className="divide-y divide-slate-100 dark:divide-slate-700">
                 {[1, 2, 3, 4].map((i) => (
-                   <div key={i} className="p-4 flex gap-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer">
+                   <div key={i} className="p-4 flex gap-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
                       <div className="mt-1">
-                         {i % 2 === 0 ? <Phone className="w-5 h-5 text-blue-500 dark:text-blue-400" /> : <MessageSquare className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />}
+                         {i % 2 === 0 ? <Phone className="w-5 h-5 text-blue-500" /> : <MessageSquare className="w-5 h-5 text-emerald-500" />}
                       </div>
                       <div className="flex-1">
                          <div className="flex justify-between mb-1">
                             <p className="font-bold text-slate-900 dark:text-white text-sm">{i % 2 === 0 ? 'Incoming Call' : 'SMS Inquiry'}</p>
-                            <span className="text-xs text-slate-400 dark:text-slate-500">10 mins ago</span>
+                            <span className="text-xs text-slate-400">10 mins ago</span>
                          </div>
-                         <p className="text-sm text-slate-600 dark:text-slate-300">Client asked about pricing for ceramic coating. Agent provided quote estimate.</p>
+                         <p className="text-sm text-slate-600 dark:text-slate-400">Client asked about pricing for ceramic coating. Agent provided quote estimate.</p>
                       </div>
                    </div>
                 ))}
@@ -62,18 +62,18 @@ export const AIReceptionist: React.FC = () => {
 
         <div className="space-y-6">
            {/* Capabilities */}
-           <div className="bg-slate-900 dark:bg-slate-800 text-white rounded-2xl p-6 shadow-lg border border-slate-800 dark:border-slate-700">
+           <div className="bg-slate-900 dark:bg-slate-800 text-white rounded-2xl p-6 shadow-lg border dark:border-slate-700">
               <h3 className="font-bold text-lg mb-4">Capabilities</h3>
               <ul className="space-y-3">
-                 <li className="flex items-center gap-3 text-sm text-slate-300 dark:text-slate-400">
+                 <li className="flex items-center gap-3 text-sm text-slate-300">
                     <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center"><Mic className="w-3 h-3" /></div>
                     Answer Phone Calls
                  </li>
-                 <li className="flex items-center gap-3 text-sm text-slate-300 dark:text-slate-400">
+                 <li className="flex items-center gap-3 text-sm text-slate-300">
                     <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center"><Calendar className="w-3 h-3" /></div>
                     Book Appointments
                  </li>
-                 <li className="flex items-center gap-3 text-sm text-slate-300 dark:text-slate-400">
+                 <li className="flex items-center gap-3 text-sm text-slate-300">
                     <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center"><MessageSquare className="w-3 h-3" /></div>
                     Respond to SMS
                  </li>

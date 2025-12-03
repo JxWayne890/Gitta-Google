@@ -10,17 +10,7 @@ export enum UserRole {
   CLIENT = 'CLIENT',
 }
 
-export enum BusinessType {
-  MOBILE_DETAILING = 'MOBILE_DETAILING',
-  LANDSCAPING = 'LANDSCAPING',
-  ROOFING = 'ROOFING',
-  CONSTRUCTION = 'CONSTRUCTION',
-  HVAC = 'HVAC',
-  PLUMBING = 'PLUMBING',
-  PRESSURE_WASHING = 'PRESSURE_WASHING',
-  CLEANING = 'CLEANING',
-  OTHER = 'OTHER'
-}
+export type PayrollType = 'HOURLY' | 'COMMISSION' | 'DAILY_RATE';
 
 export enum JobStatus {
   DRAFT = 'DRAFT',
@@ -29,6 +19,17 @@ export enum JobStatus {
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED'
 }
+
+export type PipelineStage = 
+  | 'LEAD' 
+  | 'ESTIMATE_SENT' 
+  | 'APPROVED' 
+  | 'SCHEDULED' 
+  | 'IN_PROGRESS' 
+  | 'COMPLETED' 
+  | 'INVOICED' 
+  | 'PAID' 
+  | 'ON_HOLD';
 
 export enum QuoteStatus {
   DRAFT = 'DRAFT',
@@ -46,39 +47,28 @@ export enum InvoiceStatus {
   BAD_DEBT = 'BAD_DEBT'
 }
 
-// --- TIME SHEET TYPES (NEW) ---
-
-export enum TimeEntryType {
-  WORK = 'WORK',
-  BREAK = 'BREAK',
-  TRAVEL = 'TRAVEL'
-}
-
-export enum TimeSheetStatus {
-  DRAFT = 'DRAFT',
-  SUBMITTED = 'SUBMITTED',
-  APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED'
-}
-
-export interface TimeEntry {
+export interface ActivityLogItem {
   id: string;
   userId: string;
-  jobId?: string; // Optional link to a specific job
-  type: TimeEntryType;
-  start: string; // ISO String
-  end?: string; // ISO String (undefined if currently clocked in)
-  durationMinutes?: number; 
-  notes?: string;
-  location?: {
-    lat: number;
-    lng: number;
-    address?: string;
-  };
-  status: TimeSheetStatus;
+  type: 'ARRIVED' | 'COMPLETED' | 'STARTED' | 'CREATED' | 'UPDATED' | 'NOTE';
+  description: string;
+  timestamp: string;
+  jobId?: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  link?: string;
+  type?: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
 }
 
 // --- COMMUNICATION TYPES ---
+export type ChatType = 'DIRECT' | 'GROUP';
 
 export interface ChatMessage {
   id: string;
@@ -86,36 +76,16 @@ export interface ChatMessage {
   senderId: string;
   content: string;
   timestamp: string;
-  type: 'TEXT' | 'SYSTEM';
+  readBy: string[];
 }
 
 export interface Chat {
   id: string;
-  type: 'DIRECT' | 'GROUP';
-  name?: string; // For groups
+  type: ChatType;
+  name?: string;
   participantIds: string[];
   lastMessage?: ChatMessage;
   unreadCount?: number;
-}
-
-export interface ActivityLog {
-  id: string;
-  userId: string;
-  jobId?: string;
-  type: 'ON_THE_WAY' | 'ARRIVED' | 'COMPLETED' | 'MESSAGE' | 'SYSTEM' | 'CANCELLED';
-  description: string;
-  timestamp: string;
-}
-
-export interface Notification {
-  id: string;
-  userId: string;
-  type: 'ASSIGNMENT' | 'SYSTEM' | 'ALERT' | 'REMINDER';
-  title: string;
-  message: string;
-  read: boolean;
-  timestamp: string;
-  link?: string;
 }
 
 // --- INVENTORY MANAGEMENT TYPES ---
@@ -127,10 +97,10 @@ export interface InventoryProduct {
   category: string;
   brand?: string;
   description?: string;
-  unit: string; // e.g., 'ea', 'gal', 'box'
+  unit: string;
   cost: number;
   price: number;
-  minStock: number; // Reorder Point
+  minStock: number;
   trackSerial: boolean;
   image?: string;
   supplierId?: string;
@@ -140,7 +110,7 @@ export interface Warehouse {
   id: string;
   name: string;
   type: 'WAREHOUSE' | 'VEHICLE';
-  assignedUserId?: string; // If vehicle
+  assignedUserId?: string;
   address?: string;
 }
 
@@ -151,7 +121,7 @@ export interface InventoryRecord {
   quantity: number;
   binLocation?: string;
   lastUpdated: string;
-  lastUpdatedBy?: string; // User ID of who last touched this
+  lastUpdatedBy?: string;
 }
 
 export interface Vendor {
@@ -182,12 +152,50 @@ export interface PurchaseOrder {
   notes?: string;
 }
 
+// --- TIMESHEET TYPES ---
+export enum TimeEntryType {
+  JOB = 'JOB',
+  TRAVEL = 'TRAVEL',
+  BREAK = 'BREAK',
+  ADMIN = 'ADMIN'
+}
+
+export enum TimeEntryStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED'
+}
+
+export interface TimeEntry {
+  id: string;
+  userId: string;
+  type: TimeEntryType;
+  startTime: string;
+  endTime?: string;
+  durationMinutes?: number;
+  jobId?: string;
+  notes?: string;
+  status: TimeEntryStatus;
+  gpsLocation?: { lat: number; lng: number; address: string };
+}
+
+export interface TimeOffRequest {
+  id: string;
+  userId: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'DENIED';
+  type: 'VACATION' | 'SICK' | 'PERSONAL';
+}
+
 // --- MARKETING TYPES ---
 export enum CampaignStatus {
   DRAFT = 'DRAFT',
   SCHEDULED = 'SCHEDULED',
   SENDING = 'SENDING',
   SENT = 'SENT',
+  PAUSED = 'PAUSED',
   ARCHIVED = 'ARCHIVED'
 }
 
@@ -197,39 +205,88 @@ export enum ChannelType {
 }
 
 export interface MarketingCampaign {
-  id: string;
+  id: string; 
+  companyId?: string;
   title: string;
-  subject?: string; // Email only
-  previewText?: string; // Email only
-  content: string; // HTML for email, text for SMS
+  subject?: string;
+  previewText?: string;
+  fromName?: string;
+  content: string; 
   channel: ChannelType;
   status: CampaignStatus;
   segmentId: string;
+  targetClientIds?: string[]; // New field for individual selection
   scheduledDate?: string;
   sentDate?: string;
   stats: {
     sent: number;
     delivered: number;
-    opened?: number; // Email
+    opened: number;
     clicked: number;
-    replied?: number; // SMS
+    replied?: number;
     bounced: number;
     unsubscribed: number;
   };
   tags: string[];
 }
 
+export interface EmailLog {
+  id: string;
+  campaignId: string;
+  resendMessageId: string;
+  toEmail: string;
+  status: 'sent' | 'delivered' | 'bounced' | 'complained';
+  opened: boolean;
+  clicked: boolean;
+  timestamp: string;
+}
+
+export type AutomationTriggerType = 
+  | 'CUSTOMER_CREATED' 
+  | 'JOB_COMPLETED' 
+  | 'INVOICE_SENT' 
+  | 'JOB_DECLINED';
+
+export type AutomationActionType = 
+  | 'SEND_EMAIL' 
+  | 'ADD_TAG' 
+  | 'UPDATE_NOTES' 
+  | 'MOVE_SEGMENT';
+
+export interface AutomationAction {
+  type: AutomationActionType;
+  config: {
+    templateId?: string; 
+    emailBody?: string;
+    emailSubject?: string;
+    tagName?: string;
+    segmentId?: string;
+    noteText?: string;
+  };
+}
+
 export interface MarketingAutomation {
   id: string;
   title: string;
-  trigger: string; // e.g., "Job Completed", "New Lead"
+  trigger: AutomationTriggerType;
+  triggerConfig?: any;
+  actions: AutomationAction[];
   status: 'ACTIVE' | 'PAUSED';
-  steps: number;
   stats: {
     active: number;
     completed: number;
     revenue: number;
   };
+  steps?: number;
+}
+
+export interface AutomationRun {
+  id: string;
+  automationId: string;
+  triggerType: string;
+  payload: any;
+  result: string;
+  ranAt: string;
 }
 
 export interface AudienceSegment {
@@ -241,26 +298,56 @@ export interface AudienceSegment {
   lastUpdated: string;
 }
 
-// --- EXISTING INTERFACES ---
+// --- NEW ONBOARDING TYPES ---
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  defaultPrice: number;
+  defaultDurationMinutes: number;
+  category?: string;
+}
+
+export interface AppSettings {
+  companyName: string;
+  companyAddress: string;
+  companyCode?: string;
+  taxRate: number;
+  taxName?: string;
+  currency: string;
+  businessHoursStart: string;
+  businessHoursEnd: string;
+  lowStockThreshold: number;
+  enableAutoInvoice: boolean;
+  smsTemplateOnMyWay: string;
+  serviceCategories?: string[];
+  paymentMethods?: string[];
+  defaultDepositRate?: number;
+  brandColors?: { primary: string; secondary: string };
+  messageTemplates?: Record<string, string>;
+  onboardingStep?: number;
+}
 
 export interface User {
   id: string;
+  companyId: string;
+  companyCode?: string;
   name: string;
   email: string;
   role: UserRole;
-  status?: 'ACTIVE' | 'INVITED'; // NEW: Track invitation status
-  businessType?: BusinessType; // Used for logic switching
-  businessName?: string; // NEW: Store the actual company name
-  industry?: string; // NEW: Store the specific industry string
   avatarUrl: string;
   phone?: string;
   color?: string;
   skills?: string[];
   rating?: number;
-  hourlyRate?: number; // NEW: For Payroll calc
   joinDate?: string;
   lat?: number;
   lng?: number;
+  onboardingComplete: boolean;
+  enableTimesheets: boolean;
+  payrollType: PayrollType;
+  payRate: number;
 }
 
 export interface Address {
@@ -279,23 +366,12 @@ export interface Property {
   accessInstructions?: string;
 }
 
-// For Detailing
 export interface VehicleDetails {
     make: string;
     model: string;
     year: string;
     color: string;
     type: string;
-}
-
-// NEW: For Construction, Roofing, etc.
-export interface PropertyDetails {
-    homeSizeSqFt?: string;
-    homeType?: 'Single Family' | 'Townhouse' | 'Commercial' | 'Apartment' | 'Other';
-    stories?: number;
-    roofMaterial?: string; // For Roofers
-    lotSizeAcres?: string; // For Landscapers
-    notes?: string;
 }
 
 export interface Client {
@@ -342,14 +418,12 @@ export interface Job {
   end: string;
   status: JobStatus;
   priority: 'LOW' | 'MEDIUM' | 'HIGH';
-  vehicleDetails?: VehicleDetails; // Used if businessType === MOBILE_DETAILING
-  propertyDetails?: PropertyDetails; // Used for other business types
+  vehicleDetails?: VehicleDetails;
   items: LineItem[];
   checklists: ChecklistItem[];
   photos: JobPhoto[];
   notes?: string;
-  onMyWayBy?: string; // User ID of who is on the way
-  cancellationReason?: string; // Reason if cancelled
+  pipelineStage?: PipelineStage;
 }
 
 export interface Quote {

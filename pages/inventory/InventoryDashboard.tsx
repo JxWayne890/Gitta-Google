@@ -56,10 +56,10 @@ export const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ products
                 <p className="text-slate-500 dark:text-slate-400 mt-1">Real-time stock tracking and valuation.</p>
             </div>
             <div className="flex gap-3">
-                <Link to="/inventory/orders" className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                <Link to="/inventory/orders" className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                     <ShoppingCart className="w-4 h-4" /> Purchasing
                 </Link>
-                <Link to="/inventory/stock" className="flex items-center gap-2 bg-slate-900 dark:bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-800 dark:hover:bg-emerald-700 transition-colors shadow-lg shadow-slate-900/20 dark:shadow-emerald-600/20">
+                <Link to="/inventory/stock" className="flex items-center gap-2 bg-slate-900 dark:bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-800 dark:hover:bg-emerald-700 transition-colors shadow-lg shadow-slate-900/20">
                     <Box className="w-4 h-4" /> Manage Stock
                 </Link>
             </div>
@@ -83,7 +83,7 @@ export const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ products
                         <AlertTriangle className="w-5 h-5" />
                     </div>
                     {metrics.lowStockCount > 0 && (
-                        <span className="text-xs font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full animate-pulse">Action Required</span>
+                        <span className="text-xs font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-full animate-pulse">Action Required</span>
                     )}
                 </div>
                 <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Low Stock Items</p>
@@ -115,16 +115,13 @@ export const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ products
             {/* Chart */}
             <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
                 <h3 className="font-bold text-slate-900 dark:text-white mb-6">Inventory by Category</h3>
-                <div className="h-64">
+                <div className="w-full min-w-0" style={{ height: 256 }}>
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={categoryData} layout="vertical" margin={{ left: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" strokeOpacity={0.1} />
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" opacity={0.2} />
                             <XAxis type="number" hide />
                             <YAxis type="category" dataKey="name" width={100} tick={{fontSize: 12, fill: '#64748b', fontWeight: 600}} axisLine={false} tickLine={false} />
-                            <Tooltip 
-                                cursor={{fill: 'rgba(255,255,255,0.05)'}} 
-                                contentStyle={{backgroundColor: 'var(--tw-prose-body)', borderRadius: '8px', border: '1px solid #e2e8f0'}}
-                            />
+                            <Tooltip cursor={{fill: 'transparent'}} contentStyle={{backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
                             <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={32}>
                                 {categoryData.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -137,11 +134,11 @@ export const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ products
 
             {/* Alerts List */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-red-50/50 dark:bg-red-900/10 flex justify-between items-center">
+                <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-red-50/50 dark:bg-red-900/20 flex justify-between items-center">
                     <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-red-500" /> Low Stock Alerts
                     </h3>
-                    <Link to="/inventory/stock" className="text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">View All</Link>
+                    <Link to="/inventory/stock" className="text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-700">View All</Link>
                 </div>
                 <div className="flex-1 overflow-y-auto p-0">
                     {products.filter(p => {
@@ -150,10 +147,10 @@ export const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ products
                     }).slice(0, 5).map(prod => {
                         const currentStock = records.filter(r => r.productId === prod.id).reduce((acc, r) => acc + r.quantity, 0);
                         return (
-                            <div key={prod.id} className="p-4 border-b border-slate-100 dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                            <div key={prod.id} className="p-4 border-b border-slate-100 dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                 <div className="flex justify-between items-start mb-1">
                                     <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{prod.name}</p>
-                                    <span className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">{currentStock} / {prod.minStock}</span>
+                                    <span className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">{currentStock} / {prod.minStock}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-slate-500 dark:text-slate-400">{prod.sku}</span>

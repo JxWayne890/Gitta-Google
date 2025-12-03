@@ -1,11 +1,11 @@
 
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAppStore, StoreContext } from './store';
 import { Sidebar } from './components/Sidebar';
 import { MobileNavigation } from './components/MobileNavigation';
-import { ActivityFeed } from './components/ActivityFeed';
-import { NotificationCenter } from './components/NotificationCenter';
+import { ActivityFeed } from './components/ActivityFeed'; 
+import { ClockTimer } from './components/ClockTimer'; 
 import { LandingPage } from './pages/LandingPage'; 
 import { FeaturesPage } from './pages/FeaturesPage'; 
 import { PricingPage } from './pages/PricingPage'; 
@@ -19,18 +19,23 @@ import { ClientDetail } from './pages/ClientDetail';
 import { QuotesList } from './pages/QuotesList';
 import { TeamList } from './pages/TeamList';
 import { TeamDetail } from './pages/TeamDetail';
-import { Communication } from './pages/Communication';
 import { Reports } from './pages/Reports';
 import { Marketing } from './pages/Marketing';
 import { MarketingCampaigns } from './pages/MarketingCampaigns';
+import { MarketingCampaignBuilder } from './pages/MarketingCampaignBuilder';
 import { MarketingAutomations } from './pages/MarketingAutomations';
+import { MarketingAutomationBuilder } from './pages/MarketingAutomationBuilder';
 import { MarketingAudiences } from './pages/MarketingAudiences';
 import { AIReceptionist } from './pages/AIReceptionist';
+import { Communication } from './pages/Communication';
+import { Timesheets } from './pages/Timesheets';
+import { Settings } from './pages/Settings';
 import { InventoryDashboard } from './pages/inventory/InventoryDashboard';
 import { Products } from './pages/inventory/Products';
 import { StockLevels } from './pages/inventory/StockLevels';
 import { PurchaseOrders } from './pages/inventory/PurchaseOrders';
-import { TimeSheets } from './pages/TimeSheets';
+import { OnboardingWizard } from './components/Onboarding/OnboardingWizard'; 
+import { Loader2 } from 'lucide-react';
 
 import { UserRole } from './types';
 
@@ -39,7 +44,12 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   if (!store) return null;
-  const { currentUser, switchUser, darkMode, toggleDarkMode, logout } = store;
+  const { currentUser, switchUser, logout, theme } = store;
+
+  // --- ONBOARDING CHECK ---
+  if (!currentUser.onboardingComplete) {
+      return <OnboardingWizard />;
+  }
 
   const handleUserSwitch = () => {
     const newRole = currentUser.role === UserRole.ADMIN ? UserRole.TECHNICIAN : UserRole.ADMIN;
@@ -47,59 +57,61 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f8fafc] dark:bg-slate-950 transition-colors duration-200">
-      <div 
-        className={`hidden md:block shrink-0 print:hidden transition-[width] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
-          isSidebarCollapsed ? 'w-20' : 'w-56'
-        }`}
-      >
-        <Sidebar 
-          user={currentUser} 
-          onSwitchUser={handleUserSwitch} 
-          onLogout={logout}
-          isCollapsed={isSidebarCollapsed}
-          toggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          darkMode={darkMode}
-          toggleDarkMode={toggleDarkMode}
-        />
-      </div>
-      
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-30 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800 transition-all print:hidden">
-         <div className="flex items-center justify-center">
-            <div className="h-10 w-auto flex items-center justify-center">
-              <img src="https://i.imgur.com/Bt9CDPn.png" alt="Gitta Job" className="h-full w-auto object-contain" />
-            </div>
-         </div>
-         
-         <div className="flex items-center gap-3">
-             <NotificationCenter />
-             
-             <button onClick={handleUserSwitch} className="relative">
-                <img 
-                  src={currentUser.avatarUrl} 
-                  alt="User" 
-                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover"
-                />
-                <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-slate-800 dark:bg-slate-700 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
-                    <span className="text-[8px] text-white font-bold">{currentUser.role[0]}</span>
-                </div>
-             </button>
-         </div>
-      </div>
-
-      <MobileNavigation user={currentUser} onSwitchUser={handleUserSwitch} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
-
-      <main className="flex-1 flex flex-col mt-16 md:mt-0 overflow-x-hidden max-w-[1600px] print:p-0 print:mt-0 print:max-w-none print:overflow-visible print:bg-white pb-24 md:pb-8 min-w-0 relative">
-        <div className="hidden md:flex justify-end px-8 pt-6 pb-0 shrink-0">
-            <NotificationCenter />
+    <div className={theme}>
+      <div className="min-h-screen flex bg-[#f8fafc] dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+        <ActivityFeed />
+        <ClockTimer /> 
+        
+        {/* Desktop Sidebar */}
+        <div 
+          className={`hidden md:block shrink-0 print:hidden transition-[width] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+            isSidebarCollapsed ? 'w-20' : 'w-52'
+          }`}
+        >
+          <Sidebar 
+            user={currentUser} 
+            onSwitchUser={handleUserSwitch} 
+            isCollapsed={isSidebarCollapsed}
+            toggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          />
         </div>
         
-        <div className="p-4 md:p-8 flex-1">
-            {children}
+        {/* Mobile Header */}
+        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-30 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800 transition-all print:hidden">
+           <div className="flex items-center justify-center">
+              <div className="h-10 w-auto flex items-center justify-center">
+                <img src="https://i.imgur.com/Bt9CDPn.png" alt="Gitta Job" className="h-full w-auto object-contain dark:hidden" />
+                <img src="https://i.imgur.com/Bt9CDPn.png" alt="Gitta Job" className="h-full w-auto object-contain hidden dark:block brightness-0 invert" />
+              </div>
+           </div>
+           
+           <div className="flex items-center gap-3">
+               <button 
+                  onClick={logout} 
+                  className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+               >
+                  Logout
+               </button>
+               <button onClick={handleUserSwitch} className="relative">
+                  <img 
+                    src={currentUser.avatarUrl} 
+                    alt="User" 
+                    className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover"
+                  />
+                  <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-slate-800 dark:bg-slate-600 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
+                      <span className="text-[8px] text-white font-bold">{currentUser.role[0]}</span>
+                  </div>
+               </button>
+           </div>
         </div>
-      </main>
 
-      <ActivityFeed />
+        {/* Mobile Bottom Navigation */}
+        <MobileNavigation user={currentUser} onSwitchUser={handleUserSwitch} />
+
+        <main className="flex-1 p-4 md:p-8 mt-16 md:mt-0 overflow-x-hidden max-w-[1600px] print:p-0 print:mt-0 print:max-w-none print:overflow-visible print:bg-white pb-24 md:pb-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 };
@@ -107,13 +119,16 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const App: React.FC = () => {
   const store = useAppStore();
 
-  useEffect(() => {
-    if (store.darkMode) {
-        document.documentElement.classList.add('dark');
-    } else {
-        document.documentElement.classList.remove('dark');
-    }
-  }, [store.darkMode]);
+  if (store.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-teal-500 animate-spin" />
+          <p className="text-slate-500 font-medium text-sm">Loading FieldFlow...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <StoreContext.Provider value={store}>
@@ -140,7 +155,9 @@ const App: React.FC = () => {
                 } 
                 />
                 <Route path="/schedule" element={<Schedule jobs={store.jobs} users={store.users} />} />
-                <Route path="/jobs" element={<JobsList jobs={store.jobs} clients={store.clients} onAddJob={store.addJob} onAddClient={store.addClient} />} />
+                <Route path="/jobs" element={<JobsList jobs={store.jobs} clients={store.clients} onAddJob={store.addJob} />} />
+                <Route path="/timesheets" element={<Timesheets />} />
+                <Route path="/settings" element={<Settings />} />
                 <Route 
                     path="/jobs/:id" 
                     element={
@@ -151,7 +168,6 @@ const App: React.FC = () => {
                         />
                     } 
                 />
-                <Route path="/communication" element={<Communication />} />
                 <Route path="/clients" element={<ClientsList clients={store.clients} jobs={store.jobs} invoices={store.invoices} onAddClient={store.addClient} />} />
                 <Route 
                     path="/clients/:id" 
@@ -172,19 +188,23 @@ const App: React.FC = () => {
                 <Route path="/team/:id" element={<TeamDetail users={store.users} jobs={store.jobs} />} />
                 <Route path="/reports" element={<Reports jobs={store.jobs} invoices={store.invoices} users={store.users} />} />
                 
-                <Route path="/timesheets" element={<TimeSheets />} />
-
+                {/* MARKETING ROUTES */}
                 <Route path="/marketing" element={<Marketing campaigns={store.marketingCampaigns} />} />
-                <Route path="/marketing/campaigns" element={<MarketingCampaigns campaigns={store.marketingCampaigns} segments={store.marketingSegments} onAddCampaign={store.addCampaign} />} />
+                <Route path="/marketing/campaigns" element={<MarketingCampaigns campaigns={store.marketingCampaigns} segments={store.marketingAudiences} onAddCampaign={store.addCampaign} />} />
+                <Route path="/marketing/campaigns/:id" element={<MarketingCampaignBuilder />} />
                 <Route path="/marketing/automations" element={<MarketingAutomations automations={store.marketingAutomations} />} />
-                <Route path="/marketing/audiences" element={<MarketingAudiences segments={store.marketingSegments} />} />
+                <Route path="/marketing/automations/:id" element={<MarketingAutomationBuilder />} />
+                <Route path="/marketing/audiences" element={<MarketingAudiences segments={store.marketingAudiences} />} />
 
+                {/* INVENTORY ROUTES */}
                 <Route path="/inventory" element={<InventoryDashboard products={store.inventoryProducts} records={store.inventoryRecords} purchaseOrders={store.purchaseOrders} />} />
                 <Route path="/inventory/products" element={<Products products={store.inventoryProducts} vendors={store.vendors} onAddProduct={store.addProduct} />} />
                 <Route path="/inventory/stock" element={<StockLevels products={store.inventoryProducts} records={store.inventoryRecords} warehouses={store.warehouses} onUpdateStock={store.updateStock} />} />
                 <Route path="/inventory/orders" element={<PurchaseOrders orders={store.purchaseOrders} vendors={store.vendors} products={store.inventoryProducts} onCreatePO={store.createPO} />} />
 
+                {/* AI TOOLS */}
                 <Route path="/ai-receptionist" element={<AIReceptionist />} />
+                <Route path="/communication" element={<Communication />} />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

@@ -1,4 +1,5 @@
-import React, { useMemo, useContext } from "react";
+
+import React, { useMemo, useContext } from 'react';
 import {
   AreaChart,
   Area,
@@ -9,72 +10,26 @@ import {
   ResponsiveContainer,
   Cell,
   PieChart,
-  Pie,
-  BarChart,
-  Bar,
-  Legend,
-} from "recharts";
-import {
-  CircleDollarSign,
-  CheckCircle,
-  Users,
-  Clock,
-  ArrowUpRight,
-  AlertTriangle,
-  Calendar,
-  MapPin,
+  Pie
+} from 'recharts';
+import { 
+  CircleDollarSign, 
+  CheckCircle, 
+  Users, 
+  Clock, 
+  AlertTriangle, 
+  Calendar, 
+  MapPin, 
   ChevronRight,
   FileText,
   Briefcase,
   Bell,
-  Activity,
-  Star,
-  Zap,
-  Truck,
-  Box,
-  Navigation,
-  Phone,
-  MessageSquare,
-  Target,
-  TrendingUp,
-  Award,
-  Smartphone,
-  AlertCircle,
-} from "lucide-react";
-import { Job, Invoice, Quote, User, JobStatus, InvoiceStatus, QuoteStatus, UserRole } from "../types";
-import {
-  isSameDay,
-  isAfter,
-  isBefore,
-  formatDistanceToNow,
-  addDays,
-  format,
-  endOfDay,
-  differenceInMinutes,
-  endOfMonth,
-  isSameMonth,
-} from "date-fns";
-import { Link } from "react-router-dom";
-import { StoreContext } from "../store";
-
-// Helpers to replace missing date-fns exports
-const startOfDay = (d: Date | number) => {
-  const newDate = new Date(d);
-  newDate.setHours(0, 0, 0, 0);
-  return newDate;
-};
-
-const startOfMonth = (d: Date | number) => {
-  const newDate = new Date(d);
-  newDate.setDate(1);
-  newDate.setHours(0, 0, 0, 0);
-  return newDate;
-};
-
-// Simple helper to get full name
-const getUserName = (u: User) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email;
-
-// ---------------- ADMIN DASHBOARD ----------------
+  Activity
+} from 'lucide-react';
+import { Job, Invoice, Quote, User, JobStatus, InvoiceStatus, QuoteStatus, UserRole } from '../types';
+import { isSameDay, isAfter, isBefore, parseISO, formatDistanceToNow, subDays, format, startOfDay, endOfDay } from 'date-fns';
+import { Link } from 'react-router-dom';
+import { StoreContext } from '../store';
 
 interface DashboardProps {
   jobs: Job[];
@@ -83,1016 +38,438 @@ interface DashboardProps {
   users: User[];
 }
 
-const AdminDashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, users }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ jobs, invoices, quotes, users }) => {
   const store = useContext(StoreContext);
+  const currentUser = store?.currentUser;
   const today = new Date();
 
-  // ------- BASIC DERIVED DATA -------
+  // --- ROLE CHECK ---
+  const isTechnician = currentUser?.role === UserRole.TECHNICIAN;
 
-  const overdueInvoices = invoices.filter((i) => i.status === InvoiceStatus.OVERDUE);
-
-  const unassignedJobs = jobs.filter(
-    (j) => !j.assignedTechnicianId && j.status !== JobStatus.COMPLETED && j.status !== JobStatus.CANCELLED,
-  );
-
-  const todaysJobs = jobs
-    .filter((j) => isSameDay(new Date(j.scheduledStart), today))
-    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
-
-  const technicians = users.filter((u) => u.role === UserRole.TECHNICIAN);
-
-  // ------- MONTHLY REVENUE / GOAL -------
-
-  const monthlyRevenue = invoices
-    .filter((i) => i.status === InvoiceStatus.PAID && isSameMonth(new Date(i.createdAt), today))
-    .reduce((acc, i) => acc + i.total, 0);
-
-  const monthlyTarget = 75000;
-  const goalProgress = Math.min(100, (monthlyRevenue / monthlyTarget) * 100 || 0);
-
-  // ------- AVERAGE TICKET -------
-
-  const paidInvoices = invoices.filter((i) => i.status === InvoiceStatus.PAID);
-  const totalLifetimeRevenue = paidInvoices.reduce((acc, i) => acc + i.total, 0);
-  const avgTicket = paidInvoices.length > 0 ? totalLifetimeRevenue / paidInvoices.length : 0;
-
-  // ------- INVENTORY HEALTH -------
-
-  const inventoryAlerts =
-    store?.inventoryProducts?.filter((p) => {
-      const currentStock =
-        store.inventoryRecords
-          ?.filter((r: any) => r.productId === p.id)
-          .reduce((acc: number, r: any) => acc + r.quantity, 0) ?? p.stockQuantity;
-
-      // use reorderPoint as "min stock" threshold
-      return p.reorderPoint > 0 && currentStock <= p.reorderPoint;
-    }) ?? [];
-
-  // ------- FLEET UTILIZATION -------
-
-  const activeVehicles = new Set(
-    jobs
-      .filter((j) => j.status === JobStatus.IN_PROGRESS && j.assignedTechnicianId)
-      .map((j) => j.assignedTechnicianId as string),
-  ).size;
-
-  const totalVehicles = store?.warehouses?.length ?? 4; // fallback if warehouses not configured
-
-  // ------- SERVICE MIX -------
-
-  const serviceMixData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    jobs.forEach((j) => {
-      let type = "General";
-      const t = j.title.toLowerCase();
-      if (t.includes("detail")) type = "Detailing";
-      else if (t.includes("wash")) type = "Wash";
-      else if (t.includes("coating")) type = "Coating";
-      else if (t.includes("repair") || t.includes("restoration")) type = "Repair";
-
-      counts[type] = (counts[type] || 0) + 1;
-    });
-
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [jobs]);
-
-  const COLORS = ["#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6"];
-
-  // ------- TOP PERFORMER (by job total) -------
-
-  const topPerformer = useMemo(() => {
-    const techRevenue: Record<string, number> = {};
-
-    jobs
-      .filter((j) => j.status === JobStatus.COMPLETED && isSameMonth(new Date(j.scheduledEnd), today))
-      .forEach((j) => {
-        const val = j.lineItems?.reduce((s, i) => s + i.total, 0) || j.total || 0;
-        if (j.assignedTechnicianId) {
-          techRevenue[j.assignedTechnicianId] = (techRevenue[j.assignedTechnicianId] || 0) + val;
-        }
+  // --- DYNAMIC DATA (Last 7 Days Revenue) - Admin Only ---
+  const revenueChartData = useMemo(() => {
+      if (isTechnician) return [];
+      const last7Days = Array.from({ length: 7 }).map((_, i) => {
+          const d = subDays(today, 6 - i);
+          return d;
       });
 
-    const topId = Object.keys(techRevenue).sort((a, b) => techRevenue[b] - techRevenue[a])[0];
+      return last7Days.map(day => {
+          const dayStart = startOfDay(day);
+          const dayEnd = endOfDay(day);
+          
+          // Calculate revenue from paid invoices on this day
+          const dailyRevenue = invoices
+              .filter(inv => {
+                   if (inv.status !== InvoiceStatus.PAID) return false;
+                   // Use payment date if available, otherwise issued date
+                   const dateToCheck = inv.payments.length > 0 ? parseISO(inv.payments[0].date) : parseISO(inv.issuedDate);
+                   return dateToCheck >= dayStart && dateToCheck <= dayEnd;
+              })
+              .reduce((sum, inv) => sum + inv.total, 0);
 
-    if (!topId) return undefined;
-    return users.find((u) => u.id === topId);
-  }, [jobs, users, today]);
+          return {
+              name: format(day, 'EEE'), // Mon, Tue, etc.
+              revenue: dailyRevenue
+          };
+      });
+  }, [invoices, today, isTechnician]);
 
-  // ------- MARKETING SNAPSHOT -------
+  // Calculate total revenue (for the header) - All time paid
+  const totalRevenue = useMemo(() => invoices.filter(i => i.status === InvoiceStatus.PAID).reduce((acc, i) => acc + i.total, 0), [invoices]);
 
-  const activeAutomations = store?.marketingAutomations?.filter((a: any) => a.isActive).length ?? 0;
+  // --- TECHNICIAN VIEW LOGIC ---
+  if (isTechnician && currentUser) {
+      const myJobsToday = jobs
+        .filter(j => j.assignedTechIds.includes(currentUser.id) && isSameDay(parseISO(j.start), today))
+        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      
+      const currentJob = jobs.find(j => j.assignedTechIds.includes(currentUser.id) && j.status === JobStatus.IN_PROGRESS);
+      const nextJob = myJobsToday.find(j => j.status === JobStatus.SCHEDULED);
 
-  // ------- A/R AGING -------
+      return (
+          <div className="space-y-6 max-w-3xl mx-auto pb-10">
+              <div className="mb-6">
+                  <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Hello, {currentUser.name.split(' ')[0]}</h1>
+                  <p className="text-slate-500 dark:text-slate-400">Here is your schedule for {today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}.</p>
+              </div>
 
-  const arAgingData = useMemo(() => {
-    const aging = { "1-30": 0, "31-60": 0, "60+": 0 };
+              {/* Current Job Card */}
+              {currentJob ? (
+                  <div className="bg-white dark:bg-slate-800 rounded-2xl border-l-4 border-l-amber-500 shadow-md overflow-hidden">
+                      <div className="p-6">
+                          <div className="flex justify-between items-start mb-4">
+                              <div>
+                                  <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-1 rounded-full uppercase tracking-wide">In Progress</span>
+                                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mt-2">{currentJob.title}</h2>
+                              </div>
+                              <Link to={`/jobs/${currentJob.id}`} className="bg-slate-900 dark:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors">
+                                  View Job
+                              </Link>
+                          </div>
+                          <div className="space-y-3">
+                              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
+                                  <Clock className="w-5 h-5 text-slate-400" />
+                                  <span>Started at {format(parseISO(currentJob.start), 'h:mm a')}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
+                                  <MapPin className="w-5 h-5 text-slate-400" />
+                                  <span>{store?.clients.find(c => c.id === currentJob.clientId)?.properties.find(p => p.id === currentJob.propertyId)?.address.street}</span>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              ) : (
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
+                      <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full">
+                          <CheckCircle className="w-6 h-6" />
+                      </div>
+                      <div>
+                          <h3 className="font-bold text-slate-900 dark:text-white">You are currently available.</h3>
+                          <p className="text-slate-500 dark:text-slate-400 text-sm">{nextJob ? `Next job starts at ${format(parseISO(nextJob.start), 'h:mm a')}` : 'No active jobs right now.'}</p>
+                      </div>
+                  </div>
+              )}
 
-    overdueInvoices.forEach((inv) => {
-      const days = differenceInMinutes(new Date(), new Date(inv.dueDate)) / (60 * 24);
+              {/* Upcoming Jobs List */}
+              <div className="space-y-4">
+                  <h3 className="font-bold text-lg text-slate-900 dark:text-white">Today's Agenda</h3>
+                  {myJobsToday.length === 0 ? (
+                      <div className="text-center py-10 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 border-dashed">
+                          <p className="text-slate-500 dark:text-slate-400">No jobs scheduled for today.</p>
+                      </div>
+                  ) : (
+                      myJobsToday.map(job => (
+                          <Link to={`/jobs/${job.id}`} key={job.id} className="block bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors">
+                              <div className="flex justify-between items-center mb-2">
+                                  <span className="text-sm font-bold text-slate-500 dark:text-slate-400">
+                                      {format(parseISO(job.start), 'h:mm a')} - {format(parseISO(job.end), 'h:mm a')}
+                                  </span>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${job.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                                      {job.status.replace('_', ' ')}
+                                  </span>
+                              </div>
+                              <h4 className="font-bold text-slate-900 dark:text-white text-lg">{job.title}</h4>
+                              <p className="text-slate-500 dark:text-slate-400 text-sm truncate">{store?.clients.find(c => c.id === job.clientId)?.properties[0].address.street}</p>
+                          </Link>
+                      ))
+                  )}
+              </div>
+          </div>
+      );
+  }
 
-      // no balanceDue field, so treat full total as due
-      const balance = inv.total;
-
-      if (days <= 30) aging["1-30"] += balance;
-      else if (days <= 60) aging["31-60"] += balance;
-      else aging["60+"] += balance;
-    });
-
-    return Object.entries(aging).map(([name, value]) => ({ name, value }));
-  }, [overdueInvoices]);
-
-  // ------- REVENUE CHART (last 7 days) -------
-
-  const revenueChartData = useMemo(() => {
-    const last7Days = Array.from({ length: 7 }).map((_, i) => addDays(today, -(6 - i)));
-    return last7Days.map((day) => {
-      const dayStart = startOfDay(day);
-      const dayEnd = endOfDay(day);
-      const dailyRevenue = invoices
-        .filter((inv) => {
-          if (inv.status !== InvoiceStatus.PAID) return false;
-          const dateToCheck = inv.paidAt ? new Date(inv.paidAt) : new Date(inv.createdAt);
-          return dateToCheck >= dayStart && dateToCheck <= dayEnd;
-        })
-        .reduce((sum, inv) => sum + inv.total, 0);
-      return { name: format(day, "EEE"), revenue: dailyRevenue };
-    });
-  }, [invoices, today]);
+  // --- ADMIN/OFFICE VIEW ---
+  const overdueInvoices = invoices.filter(i => i.status === InvoiceStatus.OVERDUE);
+  const unassignedJobs = jobs.filter(j => j.assignedTechIds.length === 0 && j.status !== JobStatus.COMPLETED && j.status !== JobStatus.CANCELLED);
+  const pendingQuotes = quotes.filter(q => q.status === QuoteStatus.SENT);
+  const todaysJobs = jobs
+    .filter(j => isSameDay(parseISO(j.start), today))
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  const technicians = users.filter(u => u.role === 'TECHNICIAN');
+  
+  const getTechStatus = (techId: string) => {
+    const currentJob = jobs.find(j => 
+      j.assignedTechIds.includes(techId) && 
+      j.status === JobStatus.IN_PROGRESS
+    );
+    if (currentJob) return { status: 'Busy', job: currentJob };
+    const scheduledNow = jobs.find(j => 
+      j.assignedTechIds.includes(techId) &&
+      isBefore(parseISO(j.start), today) &&
+      isAfter(parseISO(j.end), today)
+    );
+    if (scheduledNow) return { status: 'Scheduled', job: scheduledNow };
+    return { status: 'Available', job: null };
+  };
 
   const quoteStats = [
-    {
-      name: "Draft",
-      value: quotes.filter((q) => q.status === QuoteStatus.DRAFT).length,
-      color: "#94a3b8",
-    },
-    {
-      name: "Sent",
-      value: quotes.filter((q) => q.status === QuoteStatus.SENT).length,
-      color: "#3b82f6",
-    },
-    {
-      name: "Accepted",
-      value: quotes.filter((q) => q.status === QuoteStatus.ACCEPTED).length,
-      color: "#10b981",
-    },
+    { name: 'Draft', value: quotes.filter(q => q.status === QuoteStatus.DRAFT).length, color: '#94a3b8' },
+    { name: 'Sent', value: quotes.filter(q => q.status === QuoteStatus.SENT).length, color: '#3b82f6' },
+    { name: 'Approved', value: quotes.filter(q => q.status === QuoteStatus.APPROVED).length, color: '#10b981' },
   ];
 
-  // ------- TECH STATUS HELPER -------
-
-  const getTechStatus = (techId: string) => {
-    const currentJob = jobs.find((j) => j.assignedTechnicianId === techId && j.status === JobStatus.IN_PROGRESS);
-    if (currentJob) return { status: "Busy", job: currentJob };
-
-    const scheduledNow = jobs.find((j) => {
-      if (j.assignedTechnicianId !== techId) return false;
-      const start = new Date(j.scheduledStart);
-      const end = new Date(j.scheduledEnd);
-      return isBefore(start, today) && isAfter(end, today);
-    });
-
-    if (scheduledNow) return { status: "Scheduled", job: scheduledNow };
-
-    return { status: "Available", job: null as Job | null };
-  };
+  const activities = [
+    ...jobs.filter(j => j.status === JobStatus.COMPLETED).map(j => ({ type: 'JOB_COMPLETE', date: j.end, data: j })),
+    ...invoices.filter(i => i.status === InvoiceStatus.PAID).map(i => ({ type: 'PAYMENT', date: i.payments[0]?.date || i.issuedDate, data: i })),
+    ...quotes.filter(q => q.status === QuoteStatus.SENT).map(q => ({ type: 'QUOTE_SENT', date: q.issuedDate, data: q }))
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
-      {/* Header */}
+      
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Admin Dashboard</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Overview for{" "}
-            {today.toLocaleDateString(undefined, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Dashboard</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">Operational overview for {today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
         </div>
         <div className="flex gap-3">
-          <Link
-            to="/jobs"
-            className="bg-slate-900 dark:bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-800 dark:hover:bg-emerald-700 transition-colors shadow-lg shadow-slate-900/20 dark:shadow-emerald-600/20 flex items-center gap-2"
-          >
-            <Calendar className="w-4 h-4" /> New Job
-          </Link>
-        </div>
-      </div>
-
-      {/* TOP METRICS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Monthly Revenue */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
-              <CircleDollarSign className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-full flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" /> +12%
-            </span>
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Monthly Revenue
-            </p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">${monthlyRevenue.toLocaleString()}</p>
-          </div>
-          <div className="mt-3">
-            <div className="flex justify-between text-[10px] font-medium text-slate-400 mb-1">
-              <span>Goal: ${monthlyTarget.toLocaleString()}</span>
-              <span>{goalProgress.toFixed(0)}%</span>
-            </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
-              <div
-                className="bg-emerald-500 h-full rounded-full transition-all duration-1000"
-                style={{ width: `${goalProgress}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Avg Ticket */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
-              <FileText className="w-6 h-6" />
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Avg Ticket Price
-            </p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">${avgTicket.toFixed(0)}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Per paid invoice</p>
-          </div>
-        </div>
-
-        {/* Inventory Alerts */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg">
-              <Box className="w-6 h-6" />
-            </div>
-            {inventoryAlerts.length > 0 && (
-              <span className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-full animate-pulse">
-                Action Needed
-              </span>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Low Stock Alerts
-            </p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{inventoryAlerts.length} Items</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Below minimum level</p>
-          </div>
-        </div>
-
-        {/* Fleet Utilization */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-lg">
-              <Truck className="w-6 h-6" />
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Fleet Active
-            </p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-              {activeVehicles} <span className="text-sm text-slate-400 font-normal">/ {totalVehicles}</span>
-            </p>
-            <div className="flex gap-1 mt-2">
-              {Array.from({ length: totalVehicles }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 flex-1 rounded-full ${
-                    i < activeVehicles ? "bg-purple-500" : "bg-slate-200 dark:bg-slate-700"
-                  }`}
-                />
-              ))}
-            </div>
+          <div className="bg-white dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
+             <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                <CircleDollarSign className="w-5 h-5" />
+             </div>
+             <div>
+                <p className="text-xs font-bold text-slate-400 uppercase">Total Revenue</p>
+                <p className="font-bold text-slate-900 dark:text-white text-lg">${totalRevenue.toLocaleString()}</p>
+             </div>
           </div>
         </div>
       </div>
 
-      {/* MAIN GRID */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* LEFT 2/3 */}
+        
+        {/* LEFT COLUMN (Main Operations) */}
         <div className="xl:col-span-2 space-y-6">
-          {/* Action Center */}
+          
+          {/* FEATURE 1: ACTION CENTER */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link
-              to="/invoices?status=OVERDUE"
-              className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
-            >
-              <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500" />
-              <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
-                  {overdueInvoices.length}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Overdue Invoices</p>
-              </div>
-            </Link>
-
-            <Link
-              to="/schedule"
-              className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
-            >
-              <div className="absolute right-0 top-0 bottom-0 w-1 bg-amber-500" />
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-xl">
-                <Briefcase className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-                  {unassignedJobs.length}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Unassigned Jobs</p>
-              </div>
-            </Link>
-
-            <Link
-              to="/quotes?status=SENT"
-              className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
-            >
-              <div className="absolute right-0 top-0 bottom-0 w-1 bg-blue-500" />
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl">
-                <FileText className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                  {quotes.filter((q) => q.status === QuoteStatus.SENT).length}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Pending Quotes</p>
-              </div>
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Today's Agenda */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-[400px]">
-              <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
-                <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-emerald-500" />
-                  Today's Agenda
-                </h3>
-                <Link
-                  to="/schedule"
-                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 flex items-center uppercase"
-                >
-                  View Schedule <ChevronRight className="w-3 h-3 ml-1" />
-                </Link>
-              </div>
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 custom-scrollbar">
-                {todaysJobs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 dark:text-slate-400 p-6">
-                    <Calendar className="w-10 h-10 mb-3 opacity-20" />
-                    <p>No jobs scheduled for today.</p>
-                  </div>
-                ) : (
-                  todaysJobs.map((job) => (
-                    <Link
-                      to={`/jobs/${job.id}`}
-                      key={job.id}
-                      className="p-4 flex items-center hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors block group"
-                    >
-                      <div className="w-14 shrink-0 flex flex-col items-center justify-center border-r border-slate-100 dark:border-slate-700 pr-3 mr-3">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white">
-                          {new Date(job.scheduledStart).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                        </span>
-                        <span className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">
-                          {new Date(job.scheduledStart)
-                            .toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                            .slice(-2)}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-slate-900 dark:text-white truncate text-sm group-hover:text-emerald-600 transition-colors">
-                          {job.title}
-                        </h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase border ${
-                              job.status === JobStatus.IN_PROGRESS
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : job.status === JobStatus.COMPLETED
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                  : "bg-blue-50 text-blue-700 border-blue-200"
-                            }`}
-                          >
-                            {job.status.replace("_", " ")}
-                          </span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Service Mix */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 h-[400px] flex flex-col">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                <PieChart className="w-5 h-5 text-blue-500" /> Service Mix
-              </h3>
-              <div className="flex-1 relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={serviceMixData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {serviceMixData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white">{jobs.length}</span>
-                  <span className="text-xs text-slate-400 uppercase font-bold">Total Jobs</span>
+             <Link to="/invoices?status=OVERDUE" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer group relative overflow-hidden">
+                <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500"></div>
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl">
+                   <AlertTriangle className="w-6 h-6" />
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Revenue Trend */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white">Revenue Trend</h3>
-              <select className="text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-lg px-2 py-1 outline-none">
-                <option>Last 7 Days</option>
-                <option>Last 30 Days</option>
-              </select>
-            </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueChartData}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" strokeOpacity={0.2} />
-                  <XAxis
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 12 }}
-                    dy={10}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 12 }}
-                    tickFormatter={(val) => `$${val}`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--tw-prose-body)",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                    itemStyle={{ color: "#10b981" }}
-                    formatter={(value) => [`$${value}`, "Revenue"]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#colorRevenue)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Low Stock Detail List */}
-          {inventoryAlerts.length > 0 && (
-            <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/50 rounded-2xl p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-lg text-red-900 dark:text-red-200">Inventory Warning</h3>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {inventoryAlerts.slice(0, 3).map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-red-100 dark:border-red-800 shadow-sm flex justify-between items-center"
-                  >
-                    <div>
-                      <p className="font-bold text-sm text-slate-900 dark:text-white truncate">{item.name}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Reorder at: {item.reorderPoint}</p>
-                    </div>
-                    <Link to="/inventory/orders" className="text-xs font-bold text-blue-600 hover:underline">
-                      Order
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT COLUMN */}
-        <div className="space-y-6">
-          {/* Top Performer */}
-          {topPerformer && (
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -translate-y-1/2 translate-x-1/3" />
-              <div className="flex items-center gap-2 mb-4 relative z-10">
-                <Award className="w-5 h-5 text-yellow-300" />
-                <span className="text-xs font-bold uppercase tracking-widest text-indigo-200">Top Performer</span>
-              </div>
-              <div className="flex items-center gap-4 relative z-10">
-                <img
-                  src={topPerformer.avatar || ""}
-                  className="w-16 h-16 rounded-full border-4 border-white/20 object-cover"
-                  alt="Top Tech"
-                />
                 <div>
-                  <h3 className="text-xl font-bold">{getUserName(topPerformer)}</h3>
-                  <p className="text-indigo-200 text-sm">Highest Revenue This Month</p>
+                   <p className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-red-600 transition-colors">{overdueInvoices.length}</p>
+                   <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Overdue Invoices</p>
                 </div>
-              </div>
-              <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center relative z-10">
-                <div>
-                  <p className="text-xs text-indigo-200 uppercase">Rating</p>
-                  <div className="flex items-center gap-1">
-                    <Star className="w-4 h-4 text-yellow-300 fill-yellow-300" />
-                    <span className="font-bold">4.9</span>
-                  </div>
-                </div>
-                <Link
-                  to={`/team/${topPerformer.id}`}
-                  className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-xs font-bold transition-colors"
-                >
-                  View Profile
-                </Link>
-              </div>
-            </div>
-          )}
+             </Link>
 
-          {/* Live Team Status */}
+             <Link to="/schedule" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer group relative overflow-hidden">
+                 <div className="absolute right-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-xl">
+                   <Briefcase className="w-6 h-6" />
+                </div>
+                <div>
+                   <p className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-amber-600 transition-colors">{unassignedJobs.length}</p>
+                   <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Unassigned Jobs</p>
+                </div>
+             </Link>
+
+             <Link to="/quotes?status=SENT" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer group relative overflow-hidden">
+                <div className="absolute right-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl">
+                   <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                   <p className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors">{pendingQuotes.length}</p>
+                   <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Pending Quotes</p>
+                </div>
+             </Link>
+          </div>
+
+          {/* FEATURE 2: TODAY'S AGENDA */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-700">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
               <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-500" />
-                Live Team Status
+                <Calendar className="w-5 h-5 text-emerald-500" />
+                Today's Agenda
               </h3>
-            </div>
-            <div className="p-2">
-              {technicians.map((tech) => {
-                const { status, job } = getTechStatus(tech.id);
-                const isBusy = status === "Busy";
-                const isScheduled = status === "Scheduled";
-
-                return (
-                  <Link
-                    to={`/team/${tech.id}`}
-                    key={tech.id}
-                    className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition-colors cursor-pointer block group"
-                  >
-                    <div className="relative">
-                      <img
-                        src={tech.avatar || ""}
-                        alt={getUserName(tech)}
-                        className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-600 group-hover:border-emerald-400 transition-colors object-cover"
-                      />
-                      <div
-                        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-slate-800 ${
-                          isBusy ? "bg-amber-500" : isScheduled ? "bg-blue-400" : "bg-emerald-500"
-                        }`}
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">
-                        {getUserName(tech)}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {isBusy ? `On Job: ${job?.title}` : isScheduled ? "Starting soon" : "Available"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isBusy && <Activity className="w-4 h-4 text-amber-500 animate-pulse" />}
-                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500" />
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Marketing Snapshot */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                <Zap className="w-5 h-5 text-purple-500" /> Marketing Automations
-              </h3>
-            </div>
-            <div className="flex items-end justify-between mb-4">
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Active Automations</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{activeAutomations}</p>
-              </div>
-              <Link to="/marketing" className="text-purple-600 text-xs font-bold hover:underline">
-                View Campaigns
+              <Link to="/schedule" className="text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 flex items-center">
+                View Schedule <ChevronRight className="w-4 h-4 ml-1" />
               </Link>
             </div>
-            <div className="space-y-3">
-              {store?.marketingAutomations?.slice(0, 2).map((auto: any) => (
-                <div
-                  key={auto.id}
-                  className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 flex justify-between items-center"
-                >
-                  <div>
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{auto.name}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{auto.trigger}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* A/R Aging */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
-            <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Overdue Aging</h3>
-            <div className="h-40">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={arAgingData} layout="vertical">
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={40} tick={{ fontSize: 10 }} />
-                  <Tooltip cursor={{ fill: "transparent" }} contentStyle={{ borderRadius: 8 }} />
-                  <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="text-center text-xs text-slate-400 mt-2">Days Past Due</div>
-          </div>
-
-          {/* Activity Feed */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-700">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                <Bell className="w-5 h-5 text-amber-500" />
-                Activity Feed
-              </h3>
-            </div>
-            <div className="p-3 space-y-2">
-              {store?.activityLog?.slice(0, 3).map((act: any, idx: number) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700"
-                >
-                  <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-600 dark:text-slate-300 truncate">{act.description}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {formatDistanceToNow(new Date(act.timestamp), {
-                        addSuffix: true,
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ---------------- TECHNICIAN DASHBOARD ----------------
-
-const TechnicianDashboard: React.FC<DashboardProps> = ({ jobs, invoices, users }) => {
-  const store = useContext(StoreContext);
-  const currentUser = store?.currentUser as User | undefined;
-  const today = new Date();
-
-  if (!currentUser) return null;
-
-  const myJobs = jobs.filter((j) => j.assignedTechnicianId === currentUser.id);
-  const completedJobs = myJobs.filter((j) => j.status === JobStatus.COMPLETED);
-
-  const totalRevenue = completedJobs.reduce((sum, job) => {
-    const jobVal = job.lineItems?.reduce((acc, item) => acc + item.total, 0) || job.total || 0;
-    return sum + jobVal;
-  }, 0);
-
-  const jobsDoneCount = completedJobs.length;
-
-  // Mock rating for now (no rating field in User)
-  const avgRating = 4.9;
-
-  const avgTimeMinutes =
-    completedJobs.length > 0
-      ? completedJobs.reduce(
-          (acc, j) => acc + differenceInMinutes(new Date(j.scheduledEnd), new Date(j.scheduledStart)),
-          0,
-        ) / completedJobs.length
-      : 0;
-
-  const hours = Math.floor(avgTimeMinutes / 60);
-  const mins = Math.round(avgTimeMinutes % 60);
-  const avgTimeString = `${hours}h ${mins}m`;
-
-  const todaysJobs = myJobs
-    .filter((j) => isSameDay(new Date(j.scheduledStart), today) && j.status !== JobStatus.CANCELLED)
-    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
-
-  const nextJob =
-    todaysJobs.find((j) => j.status === JobStatus.SCHEDULED || j.status === JobStatus.IN_PROGRESS) || todaysJobs[0];
-
-  const lowStockCount =
-    store?.inventoryRecords?.filter((r: any) => r.warehouseId === "wh-2" && r.quantity < 5).length ?? 0;
-
-  // Helper to get address line from Property based on job.propertyId
-  const getJobAddress = (job: Job) => {
-    const property = store?.properties?.find((p: any) => p.id === job.propertyId);
-    return property?.address?.street ?? "";
-  };
-
-  return (
-    <div className="max-w-5xl mx-auto pb-20 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-900 dark:bg-slate-800 p-6 rounded-3xl shadow-lg text-white">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <img
-              src={currentUser.avatar || ""}
-              alt="Me"
-              className="w-16 h-16 rounded-full border-4 border-slate-700 shadow-sm object-cover"
-            />
-            <div className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-full border-2 border-slate-900" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Good Morning, {currentUser.firstName || getUserName(currentUser)}</h1>
-            <p className="text-slate-400 text-sm flex items-center gap-2">
-              <Briefcase className="w-3 h-3" /> Technician • {todaysJobs.length} jobs today
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          <button className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 py-3 px-5 rounded-xl font-bold text-sm transition-colors border border-slate-700">
-            <Clock className="w-4 h-4 text-emerald-400" /> Clock In
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">My Revenue</p>
-          <div className="flex items-center gap-2 mt-1">
-            <CircleDollarSign className="w-5 h-5 text-emerald-500" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">${totalRevenue.toLocaleString()}</span>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jobs Done</p>
-          <div className="flex items-center gap-2 mt-1">
-            <CheckCircle className="w-5 h-5 text-blue-500" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">{jobsDoneCount}</span>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Rating</p>
-          <div className="flex items-center gap-2 mt-1">
-            <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">{avgRating}</span>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Avg Time</p>
-          <div className="flex items-center gap-2 mt-1">
-            <Clock className="w-5 h-5 text-purple-500" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">{avgTimeString}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Column */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Up Next */}
-          {nextJob ? (
-            <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-5 rounded-full -translate-y-1/2 translate-x-1/3" />
-              <div className="flex justify-between items-start mb-4 relative z-10">
-                <span className="bg-blue-500/30 border border-blue-400/30 text-blue-100 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
-                  {nextJob.status.replace("_", " ")}
-                </span>
-                <span className="text-blue-100 font-mono text-sm">
-                  {format(new Date(nextJob.scheduledStart), "h:mm a")}
-                </span>
-              </div>
-
-              <h2 className="text-2xl font-bold mb-2 relative z-10">{nextJob.title}</h2>
-              <p className="text-blue-100 mb-6 flex items-center gap-2 relative z-10">
-                <MapPin className="w-4 h-4" /> {getJobAddress(nextJob)}
-              </p>
-
-              <div className="grid grid-cols-2 gap-3 relative z-10">
-                <Link
-                  to={`/jobs/${nextJob.id}`}
-                  className="bg-white text-blue-900 py-3 rounded-xl font-bold text-center hover:bg-blue-50 transition-colors"
-                >
-                  View Details
-                </Link>
-                <button className="bg-blue-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-600 transition-colors border border-blue-500">
-                  <Navigation className="w-4 h-4" /> Navigate
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center">
-              <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-3 opacity-50" />
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">All Caught Up!</h3>
-              <p className="text-slate-500 dark:text-slate-400">No active jobs scheduled for the rest of the day.</p>
-            </div>
-          )}
-
-          {/* Today's Route */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
-            <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-emerald-500" /> Today's Route
-            </h3>
-
-            <div className="space-y-0 relative">
-              <div className="absolute top-4 bottom-4 left-4 w-0.5 bg-slate-100 dark:bg-slate-700" />
-
-              {todaysJobs.map((job) => {
-                const isCompleted = job.status === JobStatus.COMPLETED;
-                const isCurrent = job.id === nextJob?.id;
-
-                return (
-                  <div key={job.id} className="relative pl-10 py-3 group">
-                    <div
-                      className={`absolute left-[11px] top-5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800 z-10 ${
-                        isCompleted
-                          ? "bg-emerald-500"
-                          : isCurrent
-                            ? "bg-blue-500 scale-125 ring-4 ring-blue-100 dark:ring-blue-900"
-                            : "bg-slate-300 dark:bg-slate-600"
-                      }`}
-                    />
-                    <Link
-                      to={`/jobs/${job.id}`}
-                      className={`block p-4 rounded-xl border transition-all ${
-                        isCurrent
-                          ? "bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800 shadow-sm"
-                          : "bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-700"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p
-                            className={`text-xs font-bold uppercase mb-1 ${
-                              isCurrent ? "text-blue-600 dark:text-blue-400" : "text-slate-400"
-                            }`}
-                          >
-                            {format(new Date(job.scheduledStart), "h:mm a")}
-                          </p>
-                          <h4
-                            className={`font-bold text-sm ${
-                              isCompleted ? "text-slate-500 line-through" : "text-slate-900 dark:text-white"
-                            }`}
-                          >
-                            {job.title}
-                          </h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{getJobAddress(job)}</p>
+            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+              {todaysJobs.length === 0 ? (
+                 <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                    No jobs scheduled for today.
+                 </div>
+              ) : (
+                todaysJobs.slice(0, 5).map(job => (
+                  <Link to={`/jobs/${job.id}`} key={job.id} className="p-4 flex items-center hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors block">
+                    <div className="w-20 shrink-0 flex flex-col items-center justify-center border-r border-slate-100 dark:border-slate-700 pr-4 mr-4">
+                       <span className="text-xs font-bold text-slate-400 uppercase">{new Date(job.start).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</span>
+                       <span className="text-[10px] text-slate-400">TO</span>
+                       <span className="text-xs font-bold text-slate-400 uppercase">{new Date(job.end).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-slate-900 dark:text-white truncate">{job.title}</h4>
+                        <div className="flex items-center gap-4 mt-1">
+                           <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                               <MapPin className="w-3 h-3" />
+                               Location ID: {job.propertyId.slice(0, 6)}...
+                           </div>
+                           {job.priority === 'HIGH' && (
+                               <span className="text-[10px] font-bold bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">HIGH PRIORITY</span>
+                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-slate-300" />
-                      </div>
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-3">
-            <button className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-center flex flex-col items-center gap-2 transition-colors">
-              <Truck className="w-6 h-6 text-amber-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Vehicle Check</span>
-            </button>
-            <button className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-center flex flex-col items-center gap-2 transition-colors">
-              <Box className="w-6 h-6 text-blue-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Request Stock</span>
-            </button>
-            <Link
-              to="/communication"
-              className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-center flex flex-col items-center gap-2 transition-colors"
-            >
-              <MessageSquare className="w-6 h-6 text-indigo-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Dispatch</span>
-            </Link>
-            <button className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-center flex flex-col items-center gap-2 transition-colors">
-              <Phone className="w-6 h-6 text-emerald-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Support</span>
-            </button>
-          </div>
-
-          {/* Van Inventory */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm">
-                <Box className="w-4 h-4 text-slate-400" /> Van Inventory
-              </h3>
-              {lowStockCount > 0 && (
-                <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  {lowStockCount} Low
-                </span>
+                    </div>
+                    <div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wide
+                            ${job.status === JobStatus.COMPLETED ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' : 
+                              job.status === JobStatus.IN_PROGRESS ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800' : 
+                              'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'}`}>
+                            {job.status.replace('_', ' ')}
+                        </span>
+                    </div>
+                  </Link>
+                ))
               )}
             </div>
+          </div>
 
-            {lowStockCount > 0 ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs p-2 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-800">
-                  <span className="font-medium text-red-800 dark:text-red-300">Microfiber Towels</span>
-                  <span className="font-bold text-red-600 dark:text-red-400">2 left</span>
-                </div>
-                <Link
-                  to="/inventory/stock"
-                  className="block text-center text-xs font-bold text-blue-600 hover:underline mt-2"
-                >
-                  View All Inventory
-                </Link>
+           {/* Revenue Chart */}
+           <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-6">Revenue Trend (Last 7 Days)</h3>
+              <div className="w-full min-w-0" style={{ height: 256 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={revenueChartData}>
+                    <defs>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.2} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={(val) => `$${val}`} />
+                    <Tooltip 
+                        contentStyle={{backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                        itemStyle={{color: '#1e293b'}}
+                        formatter={(value) => [`$${value}`, 'Revenue']}
+                    />
+                    <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-            ) : (
-              <p className="text-xs text-slate-500 text-center py-4">Stock levels look good! 👍</p>
-            )}
+           </div>
+
+        </div>
+
+        {/* RIGHT COLUMN (Status & Analytics) */}
+        <div className="space-y-6">
+          
+          {/* FEATURE 3: LIVE TEAM STATUS */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+             <div className="p-5 border-b border-slate-100 dark:border-slate-700">
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                    <Users className="w-5 h-5 text-blue-500" />
+                    Live Team Status
+                </h3>
+             </div>
+             <div className="p-2">
+                {technicians.map(tech => {
+                    const { status, job } = getTechStatus(tech.id);
+                    const isBusy = status === 'Busy';
+                    const isScheduled = status === 'Scheduled';
+                    
+                    return (
+                        <Link 
+                          to={`/team/${tech.id}`} 
+                          key={tech.id} 
+                          className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition-colors cursor-pointer block group"
+                        >
+                            <div className="relative">
+                                <img src={tech.avatarUrl} alt={tech.name} className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-600 group-hover:border-emerald-400 transition-colors" />
+                                <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-slate-800 ${isBusy ? 'bg-amber-500' : isScheduled ? 'bg-blue-400' : 'bg-emerald-500'}`}></div>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">{tech.name}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                    {isBusy ? `On Job: ${job?.title}` : isScheduled ? 'Starting soon' : 'Available'}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {isBusy && <Activity className="w-4 h-4 text-amber-500 animate-pulse" />}
+                                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500" />
+                            </div>
+                        </Link>
+                    );
+                })}
+             </div>
           </div>
 
-          {/* Weekly Goal */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-5">
-            <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm mb-4">
-              <Zap className="w-4 h-4 text-amber-500" /> Weekly Goal
-            </h3>
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="font-bold text-slate-700 dark:text-slate-300">${totalRevenue.toLocaleString()}</span>
-              <span className="text-slate-400">$2,500 Target</span>
-            </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full rounded-full"
-                style={{ width: "65%" }}
-              />
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 text-center">
-              Keep it up! You're 65% to your weekly bonus.
-            </p>
+          {/* FEATURE 4: SALES PIPELINE */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Quote Pipeline</h3>
+              <div className="w-full min-w-0 relative" style={{ height: 192 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie
+                            data={quoteStats}
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
+                            stroke="none"
+                        >
+                            {quoteStats.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                        </Pie>
+                        <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-3xl font-bold text-slate-900 dark:text-white">{quotes.length}</span>
+                      <span className="text-xs text-slate-400 uppercase font-bold">Total Quotes</span>
+                  </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                  {quoteStats.map(stat => (
+                      <Link 
+                        to={`/quotes?status=${stat.name.toUpperCase()}`}
+                        key={stat.name} 
+                        className="text-center p-2 rounded-lg bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-600"
+                      >
+                          <div className="w-2 h-2 rounded-full mx-auto mb-1" style={{ backgroundColor: stat.color }}></div>
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{stat.name}</p>
+                          <p className="font-bold text-slate-900 dark:text-white">{stat.value}</p>
+                      </Link>
+                  ))}
+              </div>
           </div>
+
+          {/* FEATURE 5: RECENT ACTIVITY */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-slate-700">
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                    <Bell className="w-5 h-5 text-amber-500" />
+                    Activity Feed
+                </h3>
+             </div>
+             <div className="p-3 space-y-2">
+                 {activities.map((act, idx) => {
+                     let icon, color, title, desc, linkTo;
+                     if (act.type === 'JOB_COMPLETE') {
+                         icon = CheckCircle; color = 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-100 dark:border-emerald-800';
+                         title = 'Job Completed'; desc = (act.data as Job).title;
+                         linkTo = `/jobs/${(act.data as Job).id}`;
+                     } else if (act.type === 'PAYMENT') {
+                         icon = CircleDollarSign; color = 'text-blue-500 bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800';
+                         title = 'Payment Received'; desc = `Invoice #${(act.data as Invoice).id}`;
+                         linkTo = '/invoices';
+                     } else {
+                         icon = FileText; color = 'text-slate-500 bg-slate-100 dark:bg-slate-700 border-slate-200 dark:border-slate-600';
+                         title = 'Quote Sent'; desc = `Quote #${(act.data as Quote).id}`;
+                         linkTo = '/quotes';
+                     }
+                     const Icon = icon;
+
+                     return (
+                        <Link 
+                          to={linkTo} 
+                          key={idx} 
+                          className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:border-emerald-200 dark:hover:border-emerald-700 hover:shadow-md transition-all group hover:-translate-y-0.5"
+                        >
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${color}`}>
+                                <Icon className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">{title}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{desc}</p>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap bg-slate-50 dark:bg-slate-700 px-2 py-1 rounded-md">
+                                {formatDistanceToNow(new Date(act.date), { addSuffix: true })}
+                            </div>
+                        </Link>
+                     );
+                 })}
+             </div>
+          </div>
+
         </div>
       </div>
     </div>
   );
-};
-
-// ---------------- EXPORTED DASHBOARD (NO PROPS) ----------------
-
-export const Dashboard: React.FC = () => {
-  const store = useContext(StoreContext);
-
-  if (!store || !store.currentUser) return null;
-
-  const currentUser = store.currentUser as User;
-
-  const jobs: Job[] = store.jobs ?? [];
-  const invoices: Invoice[] = store.invoices ?? [];
-  const quotes: Quote[] = store.quotes ?? [];
-  const users: User[] = store.users ?? [];
-
-  const props: DashboardProps = { jobs, invoices, quotes, users };
-
-  if (currentUser.role === UserRole.TECHNICIAN) {
-    return <TechnicianDashboard {...props} />;
-  }
-
-  return <AdminDashboard {...props} />;
 };

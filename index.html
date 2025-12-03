@@ -10,12 +10,8 @@
         darkMode: 'class',
         theme: {
           extend: {
-            colors: {
-              slate: {
-                750: '#2d3748', // Custom darker slate for subtle contrasts
-                850: '#1a202c', 
-                950: '#0f172a',
-              }
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
             }
           }
         }
@@ -31,20 +27,27 @@
       .leaflet-pane { z-index: 10; }
       .leaflet-top, .leaflet-bottom { z-index: 20; }
       
-      /* Scrollbar Styling for Dark Mode */
-      .dark ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+      /* Custom Scrollbar */
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
       }
-      .dark ::-webkit-scrollbar-track {
-        background: #1e293b; 
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
       }
-      .dark ::-webkit-scrollbar-thumb {
-        background: #475569; 
-        border-radius: 4px;
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 20px;
       }
-      .dark ::-webkit-scrollbar-thumb:hover {
-        background: #64748b; 
+      .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #475569;
+      }
+      .hide-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .hide-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
   <script type="importmap">
@@ -60,14 +63,13 @@
     "date-fns": "https://aistudiocdn.com/date-fns@^4.1.0",
     "leaflet": "https://esm.sh/leaflet@1.9.4",
     "react-leaflet": "https://esm.sh/react-leaflet@5.0.0-rc.2?external=react,react-dom,leaflet",
-    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.84.0"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.3",
+    "jspdf": "https://esm.sh/jspdf@2.5.1"
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-200">
     <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>
