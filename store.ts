@@ -1,3 +1,4 @@
+
 import { useState, useEffect, createContext } from 'react';
 import { 
   User, Job, Client, Quote, Invoice, ActivityLogItem, 
@@ -6,7 +7,8 @@ import {
   MarketingCampaign, MarketingAutomation, AudienceSegment,
   Chat, ChatMessage, AppSettings, JobTemplate,
   UserRole, JobStatus, InvoiceStatus, QuoteStatus, POStatus,
-  TimeEntryStatus, TimeEntryType, CampaignStatus, ChannelType
+  TimeEntryStatus, TimeEntryType, CampaignStatus, ChannelType,
+  PayrollType
 } from './types';
 import { supabase } from './supabaseClient';
 
@@ -118,7 +120,7 @@ const defaultSettings: AppSettings = {
 };
 
 const defaultUser: User = {
-  id: 'guest', // This is a placeholder, real IDs are UUIDs
+  id: 'guest', 
   companyId: '',
   name: 'Guest',
   email: '',
@@ -171,11 +173,16 @@ export const useAppStore = (): StoreContextType => {
   }, []);
 
   const checkSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await loadUserData(session.user.id);
-    } else {
-      setIsLoading(false);
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await loadUserData(session.user.id);
+        } else {
+          setIsLoading(false);
+        }
+    } catch (e) {
+        console.error("Session check failed", e);
+        setIsLoading(false);
     }
   };
 
@@ -188,7 +195,14 @@ export const useAppStore = (): StoreContextType => {
         .eq('id', userId)
         .single();
 
-      if (error || !profile) throw error;
+      if (error) {
+          // If no profile found but we have auth, it's a desync.
+          // Don't throw immediately, allow UI to handle "incomplete profile" if needed,
+          // but usually this means we should sign out.
+          throw error;
+      }
+
+      if (!profile) throw new Error('User profile not found. Please contact support or sign up again.');
 
       // 2. Map to User Object
       const user: User = {
@@ -197,11 +211,11 @@ export const useAppStore = (): StoreContextType => {
         name: profile.full_name || profile.email || 'User',
         email: profile.email,
         role: (profile.role as UserRole) || UserRole.ADMIN,
-        avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${profile.full_name || 'User'}`,
+        avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.full_name || 'User')}`,
         onboardingComplete: profile.onboarding_complete,
-        enableTimesheets: true,
-        payrollType: 'HOURLY',
-        payRate: 0
+        enableTimesheets: profile.enable_timesheets ?? true,
+        payrollType: (profile.payroll_type as PayrollType) || 'HOURLY',
+        payRate: profile.pay_rate || 0
       };
 
       setCurrentUser(user);
@@ -211,199 +225,230 @@ export const useAppStore = (): StoreContextType => {
       if (user.companyId) {
         await loadCompanyData(user.companyId);
       }
-    } catch (err) {
-      console.error('Error loading user:', err);
+    } catch (err: any) {
+      console.error('Error loading user:', err.message || err);
+      // Force sign out to prevent stuck state if profile is missing/broken
+      await supabase.auth.signOut();
+      setIsAuthenticated(false);
+      setCurrentUser(defaultUser);
     } finally {
       setIsLoading(false);
     }
   };
 
   const loadCompanyData = async (companyId: string) => {
-    // Parallel fetch for speed
-    const [
-      settingsRes, clientsRes, jobsRes, quotesRes, invoicesRes, 
-      campaignsRes, automationsRes, productsRes, recordsRes, 
-      warehousesRes, chatsRes, messagesRes
-    ] = await Promise.all([
-      supabase.from('settings').select('*').eq('company_id', companyId).single(),
-      supabase.from('clients').select('*').eq('company_id', companyId),
-      supabase.from('jobs').select('*').eq('company_id', companyId),
-      supabase.from('quotes').select('*').eq('company_id', companyId),
-      supabase.from('invoices').select('*').eq('company_id', companyId),
-      supabase.from('email_campaigns').select('*').eq('company_id', companyId),
-      supabase.from('marketing_automations').select('*').eq('company_id', companyId),
-      supabase.from('inventory_products').select('*').eq('company_id', companyId),
-      supabase.from('inventory_stock').select('*').eq('company_id', companyId),
-      supabase.from('warehouses').select('*').eq('company_id', companyId),
-      supabase.from('chats').select('*').eq('company_id', companyId),
-      supabase.from('messages').select('*').eq('company_id', companyId)
-    ]);
+    try {
+      // Parallel fetch for speed
+      const [
+        settingsRes, clientsRes, jobsRes, quotesRes, invoicesRes, 
+        campaignsRes, automationsRes, productsRes, recordsRes, 
+        warehousesRes, chatsRes, messagesRes
+      ] = await Promise.all([
+        supabase.from('settings').select('*').eq('company_id', companyId).single(),
+        supabase.from('clients').select('*').eq('company_id', companyId),
+        supabase.from('jobs').select('*').eq('company_id', companyId),
+        supabase.from('quotes').select('*').eq('company_id', companyId),
+        supabase.from('invoices').select('*').eq('company_id', companyId),
+        supabase.from('email_campaigns').select('*').eq('company_id', companyId),
+        supabase.from('marketing_automations').select('*').eq('company_id', companyId),
+        supabase.from('inventory_products').select('*').eq('company_id', companyId),
+        supabase.from('inventory_stock').select('*').eq('company_id', companyId),
+        supabase.from('warehouses').select('*').eq('company_id', companyId),
+        supabase.from('chats').select('*').eq('company_id', companyId),
+        supabase.from('messages').select('*').eq('company_id', companyId)
+      ]);
 
-    // Map Settings
-    if (settingsRes.data) {
-        setSettings({
-            companyName: settingsRes.data.company_name,
-            companyAddress: settingsRes.data.company_address || '',
-            companyCode: settingsRes.data.company_code,
-            taxRate: settingsRes.data.tax_rate,
-            currency: settingsRes.data.currency,
-            businessHoursStart: settingsRes.data.business_hours_start,
-            businessHoursEnd: settingsRes.data.business_hours_end,
-            lowStockThreshold: settingsRes.data.low_stock_threshold,
-            enableAutoInvoice: settingsRes.data.enable_auto_invoice,
-            smsTemplateOnMyWay: settingsRes.data.sms_template_on_my_way,
-            serviceCategories: settingsRes.data.service_categories || [],
-            paymentMethods: settingsRes.data.payment_methods || [],
-            taxName: settingsRes.data.tax_name,
-            brandColors: settingsRes.data.brand_colors,
-            onboardingStep: settingsRes.data.onboarding_step
-        });
-    }
+      // Map Settings
+      if (settingsRes.data) {
+          setSettings({
+              companyName: settingsRes.data.company_name,
+              companyAddress: settingsRes.data.company_address || '',
+              companyCode: settingsRes.data.company_code,
+              taxRate: settingsRes.data.tax_rate,
+              currency: settingsRes.data.currency,
+              businessHoursStart: settingsRes.data.business_hours_start,
+              businessHoursEnd: settingsRes.data.business_hours_end,
+              lowStockThreshold: settingsRes.data.low_stock_threshold,
+              enableAutoInvoice: settingsRes.data.enable_auto_invoice,
+              smsTemplateOnMyWay: settingsRes.data.sms_template_on_my_way,
+              serviceCategories: settingsRes.data.service_categories || [],
+              paymentMethods: settingsRes.data.payment_methods || [],
+              taxName: settingsRes.data.tax_name,
+              brandColors: settingsRes.data.brand_colors,
+              onboardingStep: settingsRes.data.onboarding_step
+          });
+      }
 
-    // Map Clients
-    if (clientsRes.data) {
-        setClients(clientsRes.data.map((c: any) => ({
-            id: c.id,
-            firstName: c.first_name,
-            lastName: c.last_name,
-            email: c.email,
-            phone: c.phone,
-            companyName: c.company_name,
-            billingAddress: c.billing_address,
-            properties: c.properties || [],
-            tags: c.tags || [],
-            createdAt: c.created_at
-        })));
-    }
+      // Map Clients
+      if (clientsRes.data) {
+          setClients(clientsRes.data.map((c: any) => ({
+              id: c.id,
+              firstName: c.first_name,
+              lastName: c.last_name,
+              email: c.email,
+              phone: c.phone,
+              companyName: c.company_name,
+              billingAddress: c.billing_address,
+              properties: c.properties || [],
+              tags: c.tags || [],
+              createdAt: c.created_at
+          })));
+      }
 
-    // Map Jobs
-    if (jobsRes.data) {
-        setJobs(jobsRes.data.map((j: any) => ({
-            id: j.id,
-            clientId: j.client_id,
-            propertyId: j.property_id,
-            assignedTechIds: j.assigned_tech_ids || [],
-            title: j.title,
-            description: j.description,
-            start: j.start_time,
-            end: j.end_time,
-            status: j.status,
-            priority: j.priority,
-            vehicleDetails: j.vehicle_details,
-            items: j.line_items || [],
-            checklists: j.checklists || [],
-            photos: j.photos || [],
-            notes: j.notes,
-            pipelineStage: j.pipeline_stage
-        })));
-    }
+      // Map Jobs
+      if (jobsRes.data) {
+          setJobs(jobsRes.data.map((j: any) => ({
+              id: j.id,
+              clientId: j.client_id,
+              propertyId: j.property_id,
+              assignedTechIds: j.assigned_tech_ids || [],
+              title: j.title,
+              description: j.description,
+              start: j.start_time,
+              end: j.end_time,
+              status: j.status,
+              priority: j.priority,
+              vehicleDetails: j.vehicle_details,
+              items: j.line_items || [],
+              checklists: j.checklists || [],
+              photos: j.photos || [],
+              notes: j.notes,
+              pipelineStage: j.pipeline_stage
+          })));
+      }
 
-    // Map Campaigns
-    if (campaignsRes.data) {
-        setMarketingCampaigns(campaignsRes.data.map((c: any) => ({
-            id: c.id,
-            companyId: c.company_id,
-            title: c.title,
-            subject: c.subject,
-            previewText: c.preview_text,
-            fromName: c.from_name,
-            content: c.html,
-            channel: ChannelType.EMAIL,
-            status: c.status as CampaignStatus,
-            segmentId: c.audience_segment,
-            targetClientIds: c.target_client_ids || [],
-            scheduledDate: c.scheduled_at,
-            sentDate: c.sent_at,
-            stats: c.stats || { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, unsubscribed: 0 },
-            tags: []
-        })));
-    }
+      // Map Campaigns
+      if (campaignsRes.data) {
+          setMarketingCampaigns(campaignsRes.data.map((c: any) => ({
+              id: c.id,
+              companyId: c.company_id,
+              title: c.title,
+              subject: c.subject,
+              previewText: c.preview_text,
+              from_name: c.from_name,
+              content: c.html,
+              channel: ChannelType.EMAIL,
+              status: c.status as CampaignStatus,
+              segmentId: c.audience_segment,
+              targetClientIds: c.target_client_ids || [],
+              scheduledDate: c.scheduled_at,
+              sentDate: c.sent_at,
+              stats: c.stats || { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, unsubscribed: 0 },
+              tags: []
+          })));
+      }
 
-    // Load other entities
-    if (invoicesRes.data) setInvoices(invoicesRes.data.map((i: any) => ({ ...i, items: i.line_items, balanceDue: i.balance_due, issuedDate: i.issued_date, dueDate: i.due_date })));
-    if (quotesRes.data) setQuotes(quotesRes.data.map((q: any) => ({ ...q, items: q.line_items, issuedDate: q.issued_date, expiryDate: q.expiry_date })));
-    
-    // Inventory
-    if (productsRes.data) setInventoryProducts(productsRes.data.map((p: any) => ({ ...p, minStock: p.min_stock, trackSerial: p.track_serial, supplierId: p.supplier_id })));
-    if (recordsRes.data) setInventoryRecords(recordsRes.data.map((r: any) => ({ ...r, productId: r.product_id, warehouseId: r.warehouse_id, lastUpdated: r.last_updated })));
-    if (warehousesRes.data) setWarehouses(warehousesRes.data);
+      // Load other entities
+      if (invoicesRes.data) setInvoices(invoicesRes.data.map((i: any) => ({ ...i, items: i.line_items, balanceDue: i.balance_due, issuedDate: i.issued_date, dueDate: i.due_date })));
+      if (quotesRes.data) setQuotes(quotesRes.data.map((q: any) => ({ ...q, items: q.line_items, issuedDate: q.issued_date, expiryDate: q.expiry_date })));
+      
+      // Inventory
+      if (productsRes.data) setInventoryProducts(productsRes.data.map((p: any) => ({ ...p, minStock: p.min_stock, trackSerial: p.track_serial, supplierId: p.supplier_id })));
+      if (recordsRes.data) setInventoryRecords(recordsRes.data.map((r: any) => ({ ...r, productId: r.product_id, warehouseId: r.warehouse_id, lastUpdated: r.last_updated })));
+      if (warehousesRes.data) setWarehouses(warehousesRes.data);
 
-    // Chat
-    if (chatsRes.data) setChats(chatsRes.data.map((c: any) => ({ ...c, participantIds: c.participant_ids })));
-    if (messagesRes.data) setMessages(messagesRes.data.map((m: any) => ({ ...m, chatId: m.chat_id, senderId: m.sender_id, readBy: m.read_by })));
+      // Chat
+      if (chatsRes.data) setChats(chatsRes.data.map((c: any) => ({ ...c, participantIds: c.participant_ids })));
+      if (messagesRes.data) setMessages(messagesRes.data.map((m: any) => ({ ...m, chatId: m.chat_id, senderId: m.sender_id, readBy: m.read_by })));
 
-    // Fetch Users
-    const { data: profiles } = await supabase.from('profiles').select('*').eq('company_id', companyId);
-    if (profiles) {
-        setUsers(profiles.map((p: any) => ({
-            id: p.id,
-            companyId: p.company_id,
-            name: p.full_name,
-            email: p.email,
-            role: p.role,
-            avatarUrl: p.avatar_url || `https://ui-avatars.com/api/?name=${p.full_name}`,
-            onboardingComplete: p.onboarding_complete,
-            enableTimesheets: true,
-            payrollType: 'HOURLY',
-            payRate: 0
-        })));
+      // Fetch Users
+      const { data: profiles } = await supabase.from('profiles').select('*').eq('company_id', companyId);
+      if (profiles) {
+          setUsers(profiles.map((p: any) => ({
+              id: p.id,
+              companyId: p.company_id,
+              name: p.full_name,
+              email: p.email,
+              role: p.role,
+              avatarUrl: p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}`,
+              onboardingComplete: p.onboarding_complete,
+              enableTimesheets: p.enable_timesheets ?? true,
+              payrollType: p.payroll_type || 'HOURLY',
+              payRate: p.pay_rate || 0
+          })));
+      }
+  } catch (error) {
+      console.error("Error loading company data", error);
     }
   };
 
   // --- ACTIONS ---
 
   const login = async (email: string, pass: string) => {
+    setIsLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (!error) checkSession();
+    if (!error) await checkSession();
+    else setIsLoading(false);
     return { error };
   };
 
   const signup = async (email: string, pass: string, name: string, type: 'create' | 'join', joinCode?: string) => {
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-        email, password: pass, options: { data: { full_name: name } }
-    });
-    if (authError) return { error: authError };
-    if (!authData.user) return { error: { message: "User creation failed" } };
+    setIsLoading(true);
+    try {
+        // 1. Create Auth User
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+            email, password: pass, options: { data: { full_name: name } }
+        });
+        if (authError) throw authError;
+        if (!authData.user) throw new Error("User creation failed");
 
-    let companyId = '';
-    let role = UserRole.ADMIN;
-    let companyCode = '';
+        let companyId = '';
+        let role = UserRole.ADMIN;
+        let companyCode = '';
 
-    if (type === 'create') {
-        const code = Math.random().toString(36).substring(2, 9).toUpperCase();
-        const { data: settingsData, error: settingsError } = await supabase.from('settings').insert({
-            company_name: `${name}'s Company`,
-            company_code: code
-        }).select().single();
+        // 2. Setup Company (Create or Find)
+        if (type === 'create') {
+            const code = Math.random().toString(36).substring(2, 9).toUpperCase();
+            // Generate UUID client-side to ensure we have it even if RLS blocks read-after-write
+            companyId = crypto.randomUUID(); 
+            companyCode = code;
+            
+            const { error: settingsError } = await supabase.from('settings').insert({
+                company_id: companyId,
+                company_name: `${name}'s Company`,
+                company_code: code,
+                onboarding_step: 1
+            });
+            
+            if (settingsError) throw settingsError;
+        } else {
+            const { data: settingsData, error: findError } = await supabase.from('settings').select('company_id').eq('company_code', joinCode).single();
+            if (findError || !settingsData) throw new Error("Invalid Company Code");
+            companyId = settingsData.company_id;
+            role = UserRole.TECHNICIAN;
+        }
+
+        // 3. Create Profile
+        const { error: profileError } = await supabase.from('profiles').insert({
+            id: authData.user.id,
+            company_id: companyId,
+            email,
+            full_name: name,
+            role,
+            onboarding_complete: false
+        });
+
+        if (profileError) throw profileError;
+
+        // 4. Force full data reload and wait for it BEFORE resolving
+        // This ensures the store has the correct company_id and profile data
+        await loadUserData(authData.user.id);
         
-        if (settingsError) return { error: settingsError };
-        companyId = settingsData.company_id;
-        companyCode = code;
-    } else {
-        const { data: settingsData, error: findError } = await supabase.from('settings').select('company_id').eq('company_code', joinCode).single();
-        if (findError || !settingsData) return { error: { message: "Invalid Company Code" } };
-        companyId = settingsData.company_id;
-        role = UserRole.TECHNICIAN;
+        return { error: null, companyCode: type === 'create' ? companyCode : undefined };
+    } catch (err: any) {
+        setIsLoading(false);
+        // Clean up if auth user was created but profile failed? 
+        // For now, return error so UI can show it.
+        return { error: err };
     }
-
-    const { error: profileError } = await supabase.from('profiles').insert({
-        id: authData.user.id,
-        company_id: companyId,
-        email,
-        full_name: name,
-        role
-    });
-
-    if (profileError) return { error: profileError };
-
-    await checkSession();
-    return { error: null, companyCode: type === 'create' ? companyCode : undefined };
   };
 
   const logout = async () => {
+    setIsLoading(true);
     await supabase.auth.signOut();
     setIsAuthenticated(false);
     setCurrentUser(defaultUser);
+    setIsLoading(false);
   };
 
   const switchUser = (role: UserRole) => {

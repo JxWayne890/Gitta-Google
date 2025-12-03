@@ -47,6 +47,15 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser, switchUser, logout, theme } = store;
 
   // --- ONBOARDING CHECK ---
+  // Ensure we have a valid user before checking onboarding
+  if (!currentUser || currentUser.id === 'guest') {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+            <Loader2 className="w-10 h-10 animate-spin text-teal-500" />
+        </div>
+      );
+  }
+
   if (!currentUser.onboardingComplete) {
       return <OnboardingWizard />;
   }
@@ -119,12 +128,15 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const App: React.FC = () => {
   const store = useAppStore();
 
-  if (store.isLoading) {
+  // Check if store is still loading OR if authenticated but the user data hasn't fully propagated yet (id is still guest)
+  const isInitializing = store.isLoading || (store.isAuthenticated && store.currentUser.id === 'guest');
+
+  if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-10 h-10 text-teal-500 animate-spin" />
-          <p className="text-slate-500 font-medium text-sm">Loading FieldFlow...</p>
+          <p className="text-slate-500 font-medium text-sm">Setting up your company...</p>
         </div>
       </div>
     );
